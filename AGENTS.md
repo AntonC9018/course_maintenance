@@ -32,9 +32,12 @@ It replaces the old per-task scripts (`rename_files.py`, `fix_files.py`,
   heading resequencing. Skips external URLs and code blocks/spans.
   `BROKEN` lines it cannot fix need a human — report them, don't guess.
 
-## When editing this script
+## When editing maintenance code
 
-- Keep it dependency-free (stdlib only) and single-file.
+- Keep it dependency-free (stdlib only). Step logic lives one module per
+  responsibility in `maintenance/` (`rename`, `convert`, `headings`,
+  `links`, `pipeline`); `maintain.py` is a thin CLI shim and `publish.py`
+  is the command dispatcher. Do not resurrect the old standalone scripts.
 - Preserve the step order; the link index must be built after renames
   and heading fixes so it sees final names/slugs.
 - Validate on a copy of a course repo (`cp -a <repo> /tmp/opencode/...`,

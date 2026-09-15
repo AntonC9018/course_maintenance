@@ -1,0 +1,95 @@
+"""Dispatcher coverage (seam: publish.py command surface).
+
+The four spec operations plus `ci` are stubs in issue #6: they must
+accept an explicit --course-repo path and fail reliably with a clear
+"not yet implemented" message. The registry test proves follow-up
+tickets can add logic without returning to a monolith.
+"""
+
+import importlib.util
+import tempfile
+import unittest
+from pathlib import Path
+
+from tests.helpers import REPO_ROOT, run_publish
+
+PUBLISH_PY = REPO_ROOT / "publish.py"
+
+REQUIRED_OPS = [
+    ("metadata", "generate"),
+    ("publishing", "check"),
+    ("projection", "build"),
+    ("site", "build"),
+]
+
+
+def load_publish_module():
+    spec = importlib.util.spec_from_file_location("publish", PUBLISH_PY)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class TestPublishDispatcher(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_required_operations_stubbed_with_clear_error(self):
+        for responsibility, operation in REQUIRED_OPS:
+            with self.subTest(f"{responsibility} {operation}"):
+                proc = run_publish(
+                    responsibility, operation,
+                    "--course-repo", str(self.root),
+                )
+                self.assertNotEqual(
+                    proc.returncode, 0,
+                    f"{responsibility} {operation} must not exit 0 before #7-15",
+                )
+                combined = proc.stdout + proc.stderr
+                self.assertIn("not yet implemented", combined.lower())
+
+    def test_explicit_course_repo_missing_is_usage_error(self):
+        missing = self.root / "does-not-exist"
+        proc = run_publish(
+            "metadata", "generate", "--course-repo", str(missing))
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("course repo", (proc.stdout + proc.stderr).lower())
+
+    def test_unknown_operation_is_usage_error(self):
+        proc = run_publish("nope", "nothing", "--course-repo", str(self.root))
+        self.assertEqual(proc.returncode, 2)
+
+    def test_no_args_is_usage_error(self):
+        proc = run_publish()
+        self.assertEqual(proc.returncode, 2)
+
+    def test_registry_accepts_new_handlers_without_monolith_edits(self):
+        publish = load_publish_module()
+        calls = []
+
+        def ping_handler(course_repo, args):
+            calls.append(course_repo)
+            return 42
+
+        publish.register("test-seam", "ping", ping_handler, help_text="test")
+        try:
+            code = publish.dispatch(
+                ["test-seam", "ping", "--course-repo", str(self.root)])
+            self.assertEqual(code, 42)
+            self.assertEqual(calls, [self.root.resolve()])
+        finally:
+            publish.unregister("test-seam", "ping")
+
+    def test_ci_stub_present(self):
+        proc = run_publish("ci", "--course-repo", str(self.root))
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn(
+            "not yet implemented", (proc.stdout + proc.stderr).lower())
+
+
+if __name__ == "__main__":
+    unittest.main()
