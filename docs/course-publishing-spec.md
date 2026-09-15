@@ -12,7 +12,7 @@ The initial release:
 - keeps reusable publishing behavior, validation, renderer setup, and deployment support in `course_maintenance`;
 - generates and validates committed lesson metadata explicitly;
 - builds disposable web projections and a deployable static site;
-- includes GitHub Pages validation and deployment through issue #4.
+- includes shared CI support through issue #14 and the data-structures-and-algorithms GitHub Pages rollout through issue #15.
 
 The initial release does not include:
 
@@ -180,10 +180,18 @@ Every operation accepts an explicit course-repository path. Check mode is read-o
 
 ### CI and deployment
 
-- **CI-1:** Pull requests run existing course maintenance checks, publishing checks, the compatibility suite, and a complete static site build with read-only permissions.
-- **CI-2:** Default-branch pushes deploy the static output through the official GitHub Pages artifact workflow.
-- **CI-3:** CI never writes or commits source metadata.
-- **CI-4:** CI details—including reusable-workflow ownership, peer checkout, caching, action pinning, path filters, and deployment concurrency—are completed through issue #4 before the initial release is considered finished.
+- **CI-1:** `course_maintenance` owns a stable CI-facing command that accepts an explicit course-repository path and runs existing course-maintenance checks, publishing checks, the compatibility suite, and a complete static site build. Shared dependency setup and CI configuration remain in `course_maintenance`.
+- **CI-2:** A course repository owns only a thin GitHub Actions workflow. It checks out the course and its pinned `course_maintenance` submodule, then invokes the shared command from that submodule; it does not fetch a separate floating maintenance or reusable-workflow revision.
+- **CI-3:** Every pull request targeting `master` runs the complete validation with read-only repository permissions. A failing validation is a required status check for ordinary pull-request merges. Pull-request jobs never deploy.
+- **CI-4:** Every push to `master`, whether direct or produced by a pull-request merge, validates and builds that exact course and submodule revision. A successful build is deployed through the official GitHub Pages artifact workflow and the `github-pages` environment. Feature-branch pushes without a pull request do not run course-site CI.
+- **CI-5:** Validation and deployment workflows use no path filters. CI never writes or commits source metadata.
+- **CI-6:** A change in `course_maintenance` affects a course only after the course repository explicitly commits an updated submodule pointer. The course CI validates that revision before deployment.
+- **CI-7:** The initial data-structures-and-algorithms configuration has no peer repositories, and the initial CI does not implement peer-repository checkout. Peer checkout automation is deferred until a rollout needs it.
+- **CI-8:** Third-party actions are pinned to immutable commit revisions. Build caches are keyed by the relevant pinned runtime, browser, and dependency-lock revisions and never cache source metadata, projections, or deployable output as authoritative results.
+- **CI-9:** Pull-request validation has only `contents: read`. Pages write and identity-token permissions are confined to the deployment job for a successful `master` build.
+- **CI-10:** Validation and deployment use concurrency controls that discard superseded work and ensure an older run cannot become the final deployment after a newer `master` revision. Failed validation does not deploy, so the previously published site remains live; the initial release does not perform automatic rollback.
+- **CI-11:** After deployment, bounded-retry smoke tests verify the root redirect, representative English and Russian routes, search, static Mermaid output, and a copied asset at the public Pages URL.
+- **CI-12:** The repository uses GitHub Actions as its Pages source and makes the validation status required for ordinary pull-request merges. It does not require changes to arrive through pull requests, and repository administrators retain the default protection bypass so direct `master` commits remain possible.
 
 ## Data-structures-and-algorithms rollout
 
@@ -213,4 +221,4 @@ Automated fixtures and representative real lessons must cover:
 - locale-prefixed routes, GitHub Pages base paths, root redirect, sidebar labels/order/collapse, lab pagination, GitHub source links, Pagefind, and absence of fallback routes;
 - a second identical projection/build that introduces no source changes or newly tracked files.
 
-The initial release is accepted when all requirements above pass locally for a clean checkout, issue #4's CI/deployment acceptance criteria pass on GitHub, and the published site is reachable at the inferred Pages URL.
+The initial release is accepted when all requirements above pass locally for a clean checkout, issues #14 and #15 pass their CI/deployment acceptance criteria on GitHub, and the published site is reachable at the inferred Pages URL.

@@ -104,7 +104,11 @@ Subject-specific navigation views are deferred to [issue #2](https://github.com/
 - An optional pre-commit hook may run metadata generation and stage its generated changes.
 - CI checks for missing or stale generated metadata, fails with instructions to run metadata generation, and never self-commits.
 - Compiled website output is deployed as a GitHub Pages artifact rather than committed.
-- CI and GitHub Pages deployment are part of the initial version. Their detailed design is handled separately in [issue #4](https://github.com/AntonC9018/course_maintenance/issues/4).
+- CI and GitHub Pages deployment are part of the initial version. Shared CI support is implemented through [issue #14](https://github.com/AntonC9018/course_maintenance/issues/14), and the first course rollout is implemented through [issue #15](https://github.com/AntonC9018/course_maintenance/issues/15).
+- Each course repository keeps a thin workflow that checks out and executes its pinned `course_maintenance` submodule. Shared-tool changes reach a course through an explicit submodule-pointer commit rather than a floating workflow reference.
+- Pull requests to `master` validate the complete site without deploying. Every successful push to `master`, including a direct commit, republishes that exact revision; failed validation leaves the preceding site live.
+- The validation check is required for ordinary pull-request merges, while repository administrators retain the protection bypass needed for direct `master` commits.
+- The initial rollout has no peer-repository checkout and no automatic deployment rollback.
 
 The implementation may replace the current monolithic maintenance script with responsibility-focused components and may use a language other than Python. Compatibility with the existing internal structure is not a design constraint; restructuring begins only when implementation is explicitly authorized.
 
