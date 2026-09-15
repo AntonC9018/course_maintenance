@@ -91,6 +91,15 @@ register("ci", None,
          _not_yet_implemented("ci", None),
          "shared CI entry point (checks + compatibility suite + site build)")
 
+# Issue #7: real `publishing check` (read-only CFG-1..CFG-6 validation).
+# Overwrites the stub above with one register() line; no logic lives here.
+try:
+    from publishing.check import run_publishing_check  # noqa: E402
+    register("publishing", "check", run_publishing_check,
+             "validate configuration, content, metadata, links and assets")
+except ImportError:  # pragma: no cover - publishing package always present
+    pass
+
 
 def build_parser():
     ap = argparse.ArgumentParser(

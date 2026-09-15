@@ -1,9 +1,9 @@
 """Dispatcher coverage (seam: publish.py command surface).
 
-The four spec operations plus `ci` are stubs in issue #6: they must
-accept an explicit --course-repo path and fail reliably with a clear
-"not yet implemented" message. The registry test proves follow-up
-tickets can add logic without returning to a monolith.
+Issue #6 stubbed all four spec operations plus `ci`. Issue #7 implements
+`publishing check` (read-only CFG-1..CFG-6 validation); the remaining ops
+stay stubbed until #8-15. The registry test proves follow-up tickets can
+add logic without returning to a monolith.
 """
 
 import importlib.util
@@ -17,10 +17,11 @@ PUBLISH_PY = REPO_ROOT / "publish.py"
 
 REQUIRED_OPS = [
     ("metadata", "generate"),
-    ("publishing", "check"),
     ("projection", "build"),
     ("site", "build"),
 ]
+
+# `publishing check` is implemented since issue #7 (read-only validation).
 
 
 def load_publish_module():
@@ -89,6 +90,17 @@ class TestPublishDispatcher(unittest.TestCase):
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn(
             "not yet implemented", (proc.stdout + proc.stderr).lower())
+
+    def test_publishing_check_implemented_read_only(self):
+        # Implemented in #7: missing config is a validation error (exit 1),
+        # not "not yet implemented", and identifies the source path + rule.
+        proc = run_publish(
+            "publishing", "check", "--course-repo", str(self.root))
+        self.assertEqual(proc.returncode, 1)
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("not yet implemented", combined.lower())
+        self.assertIn("course-publishing.json", combined)
+        self.assertIn("CFG", combined)
 
 
 if __name__ == "__main__":
