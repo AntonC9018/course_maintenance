@@ -40,6 +40,10 @@ _Avoid_: Source document, generated source
 A curated way of discovering a subset of lessons, such as the C++ or data-structures material. Absence from a view does not restrict direct access to a lesson.
 _Avoid_: Access level, permission, locked content
 
+**Lab sequence**:
+The ordered progression through a course site's lab lessons. It can cross sidebar groups and therefore does not define the ordering of non-lab material.
+_Avoid_: Navigation view, sidebar order
+
 **Source backlink**:
 The source-only link labelled "This lesson on the website" that takes a repository reader to the lesson's canonical route. It is not part of the web projection.
 _Avoid_: Canonical link, navigation link
