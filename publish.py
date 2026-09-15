@@ -100,6 +100,15 @@ try:
 except ImportError:  # pragma: no cover - publishing package always present
     pass
 
+# Issue #8: real `metadata generate` (explicit slug + backlink generation).
+# Overwrites the stub above with one register() line; no logic lives here.
+try:
+    from publishing.metadata import run_metadata_generate  # noqa: E402
+    register("metadata", "generate", run_metadata_generate,
+             "add missing lesson slugs and refresh marked source backlinks")
+except ImportError:  # pragma: no cover - publishing package always present
+    pass
+
 
 def build_parser():
     ap = argparse.ArgumentParser(

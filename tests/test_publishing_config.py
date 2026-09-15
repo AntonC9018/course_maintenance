@@ -480,6 +480,11 @@ class TestPublishingCheckReadOnly(unittest.TestCase):
         # origin commit already has placeholder; add course files
         write_config(self.root)
         make_valid_tree(self.root)
+        # Issue #8: publishing check includes META validation, so a valid
+        # repo needs generated slugs + backlinks.
+        gen = run_publish("metadata", "generate",
+                          "--course-repo", str(self.root))
+        assert gen.returncode == 0, gen.stdout + gen.stderr
         git("add", "-A", cwd=self.root)
         git("commit", "-m", "course", cwd=self.root)
         return self.root
@@ -492,6 +497,20 @@ class TestPublishingCheckReadOnly(unittest.TestCase):
         after_names, after_state = snapshot(self.root)
         self.assertEqual(before_names, after_names, "check must not create files")
         self.assertEqual(before_state, after_state, "check must not modify files")
+
+    def test_check_missing_metadata_fails_with_regen_hint(self):
+        # Without `metadata generate`, publishing check must reject missing
+        # slugs/backlinks (META-7) and tell the contributor the exact command.
+        init_repo_with_origin(self.root, "git@github.com:O/R.git")
+        write_config(self.root)
+        make_valid_tree(self.root)
+        proc = run_publish("publishing", "check",
+                           "--course-repo", str(self.root))
+        self.assertNotEqual(proc.returncode, 0)
+        combined = proc.stdout + proc.stderr
+        self.assertIn("META", combined)
+        self.assertIn("metadata generate", combined)
+        self.assertIn("--course-repo", combined)
 
     def test_check_invalid_returns_nonzero_and_readonly(self):
         self._valid_repo()

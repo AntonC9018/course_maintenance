@@ -1,9 +1,10 @@
 """Dispatcher coverage (seam: publish.py command surface).
 
 Issue #6 stubbed all four spec operations plus `ci`. Issue #7 implements
-`publishing check` (read-only CFG-1..CFG-6 validation); the remaining ops
-stay stubbed until #8-15. The registry test proves follow-up tickets can
-add logic without returning to a monolith.
+`publishing check` (read-only CFG-1..CFG-6 validation) and issue #8
+implements `metadata generate` plus META validation inside the check;
+the remaining ops stay stubbed until #9-15. The registry test proves
+follow-up tickets can add logic without returning to a monolith.
 """
 
 import importlib.util
@@ -16,12 +17,12 @@ from tests.helpers import REPO_ROOT, run_publish
 PUBLISH_PY = REPO_ROOT / "publish.py"
 
 REQUIRED_OPS = [
-    ("metadata", "generate"),
     ("projection", "build"),
     ("site", "build"),
 ]
 
 # `publishing check` is implemented since issue #7 (read-only validation).
+# `metadata generate` is implemented since issue #8 (explicit generation).
 
 
 def load_publish_module():
@@ -101,6 +102,16 @@ class TestPublishDispatcher(unittest.TestCase):
         self.assertNotIn("not yet implemented", combined.lower())
         self.assertIn("course-publishing.json", combined)
         self.assertIn("CFG", combined)
+
+    def test_metadata_generate_implemented(self):
+        # Implemented in #8: missing config is a validation error (exit 1),
+        # not "not yet implemented".
+        proc = run_publish(
+            "metadata", "generate", "--course-repo", str(self.root))
+        self.assertEqual(proc.returncode, 1)
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("not yet implemented", combined.lower())
+        self.assertIn("course-publishing.json", combined)
 
 
 if __name__ == "__main__":
