@@ -1,10 +1,11 @@
 """Dispatcher coverage (seam: publish.py command surface).
 
 Issue #6 stubbed all four spec operations plus `ci`. Issue #7 implements
-`publishing check` (read-only CFG-1..CFG-6 validation) and issue #8
-implements `metadata generate` plus META validation inside the check;
-the remaining ops stay stubbed until #9-15. The registry test proves
-follow-up tickets can add logic without returning to a monolith.
+`publishing check` (read-only CFG-1..CFG-6 validation), issue #8
+implements `metadata generate` plus META validation inside the check,
+issue #10 implements `projection build`, and issue #11 implements
+`site build`. The registry test proves follow-up tickets can add logic
+without returning to a monolith.
 """
 
 import importlib.util
@@ -16,8 +17,9 @@ from tests.helpers import REPO_ROOT, run_publish
 
 PUBLISH_PY = REPO_ROOT / "publish.py"
 
-REQUIRED_OPS = [
-    ("site", "build"),
+REQUIRED_OPS: list = [
+    # All four spec operations are implemented since #11 (`ci` stays
+    # stubbed until #14).
 ]
 
 # `projection build` is implemented since issue #10 (deterministic
@@ -25,6 +27,8 @@ REQUIRED_OPS = [
 
 # `publishing check` is implemented since issue #7 (read-only validation).
 # `metadata generate` is implemented since issue #8 (explicit generation).
+
+# `site build` is implemented since issue #11 (Starlight + dist/).
 
 
 def load_publish_module():
@@ -120,6 +124,16 @@ class TestPublishDispatcher(unittest.TestCase):
         # not "not yet implemented".
         proc = run_publish(
             "projection", "build", "--course-repo", str(self.root))
+        self.assertEqual(proc.returncode, 1)
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("not yet implemented", combined.lower())
+        self.assertIn("course-publishing.json", combined)
+
+    def test_site_build_implemented(self):
+        # Implemented in #11: missing config is a validation error (exit 1),
+        # not "not yet implemented".
+        proc = run_publish(
+            "site", "build", "--course-repo", str(self.root))
         self.assertEqual(proc.returncode, 1)
         combined = proc.stdout + proc.stderr
         self.assertNotIn("not yet implemented", combined.lower())

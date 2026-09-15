@@ -120,6 +120,16 @@ except ImportError:  # pragma: no cover - publishing package always present
     pass
 
 
+# Issue #11: real `site build` (projection + pinned Starlight + dist/).
+# Overwrites the stub above with one register() line; no logic lives here.
+try:
+    from publishing.site import run_site_build  # noqa: E402
+    register("site", "build", run_site_build,
+             "build the projection and produce dist/ via the renderer")
+except ImportError:  # pragma: no cover - publishing package always present
+    pass
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         description="Course maintenance dispatcher: "
@@ -132,12 +142,12 @@ def build_parser():
                     help="explicit path to the course-repository root "
                          "(default: .)")
     ap.add_argument("--out", default=None,
-                    help="explicit projection output directory "
-                         "(projection build only; must be outside the "
+                    help="explicit output directory "
+                         "(projection/site build only; must be outside the "
                          "course repo; default: auto temp dir)")
     ap.add_argument("--check", action="store_true",
                     help="read-only validation without writing "
-                         "(projection build only)")
+                         "(projection/site build only)")
     return ap
 
 

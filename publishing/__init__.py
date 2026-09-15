@@ -1,7 +1,7 @@
 """Course publishing: configuration, identity, inventory, metadata, links,
-projection (#7-10).
+projection + site (#7-11).
 
-Stdlib-only. Layout (one module per responsibility, extensible for #10-15):
+Stdlib-only. Layout (one module per responsibility, extensible for #12-15):
 
 - :mod:`publishing.config` -- strict version-1 `course-publishing.json`
   parsing (CFG-1) + lexical path safety.
@@ -24,8 +24,13 @@ Stdlib-only. Layout (one module per responsibility, extensible for #10-15):
   (PROJ-1..PROJ-6, #10): backlink strip, H1-preserving heading shift,
   $`code`$ -> $code$ math (PROJ-3 rejects ambiguous), link rewriting via
   links.rewrite_document + image copies, renderer-only sidebar.order +
-  nav.json, placeholder astro/mermaid/dist. Future issues add
-  site (#11-13), CI (#14) without touching this model.
+  nav.json, placeholder astro/mermaid/dist.
+- :mod:`publishing.navigation` -- pure Starlight navigation data
+  (SITE-2..14 excl Mermaid, #11): humanize, fixed labels, per-locale
+  sidebars, lab sequences/pagination, redirects, blob URLs.
+- :mod:`publishing.site` -- `site build` handler (#11): projection +
+  navigation + pinned Astro/Starlight scaffold (renderer/) + dist/ via
+  `npm ci`/`npm run build` (mockable in unit tests).
 """
 
 from __future__ import annotations
