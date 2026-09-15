@@ -35,7 +35,7 @@ Missing slugs are generated once using these rules:
 - preserve the meaningful hierarchy;
 - convert underscores and spaces to hyphens and lowercase;
 - remove ordering prefixes such as `01_` and `21a_`;
-- collapse `doc.md`, `index.md`, and `README.md` to their directory;
+- elect at most one index lesson in each directory, preferring `index.md`, then `README.md`, then `doc.md`; only that lesson collapses to its directory, while any remaining candidates keep their basename as a route component;
 - retain `stub` as a route component;
 - reject collisions and require an explicit resolution;
 - correct genuine source-name typos before the first public slug is generated.
@@ -51,7 +51,7 @@ The initial data-structures-and-algorithms mapping is:
 | `labs/cpp` | `/{lang}/cpp/labs/...` |
 | `labs/algoritms` | `/{lang}/dsa/labs/...` after correcting the directory name to `algorithms` |
 
-`05a_programming_fundamentals` uses `advanced-programming-fundamentals` to distinguish it from `05_programming_fundamentals`. `test1.md` uses `assessment-1` as its public route component.
+`05a_programming_fundamentals` uses `advanced-programming-fundamentals` to distinguish it from `05_programming_fundamentals`. The existing `labs/cpp/test1.md` lessons use `assessment-1` as their public route component.
 
 The planned C# rollout uses this mapping:
 
@@ -60,8 +60,6 @@ The planned C# rollout uses this mapping:
 | `labs/1_basic` | `/ru/csharp/labs/basic/...` |
 | `labs/2_design` | `/ru/csharp/design/labs/...` |
 | `labs/3_advanced` | `/ru/csharp/advanced/labs/...` |
-
-The `05_dependenices.md` typo is corrected before its slug is generated.
 
 ## Link resolution
 
@@ -77,15 +75,15 @@ The build constructs an index from source paths to canonical lesson routes acros
 
 ## Navigation
 
-For the initial release, the projection tree follows canonical slugs and produces one locale-wide sidebar containing Common, C++, and Data Structures and Algorithms groups. The groups use fixed localized names for structural concepts such as subjects and labs. A group with an index lesson takes its label from that lesson's title and presents the lesson itself as `Overview` or `Обзор`; remaining route segments are humanized. These renderer-owned rules are not author-controlled navigation override metadata.
+For the initial release, the projection tree follows canonical slugs and produces one locale-wide sidebar containing Common, C++, and Data Structures and Algorithms groups. Structural labels are fixed by the specification. A group with an elected index lesson takes its label from that lesson's title and presents the lesson itself as `Overview` or `Обзор`. Any unelected `index.md`, `README.md`, or `doc.md` lesson is an ordinary lesson placed immediately after the overview, in that precedence order. Remaining route segments are humanized by replacing hyphens with spaces and uppercasing the first cased character without otherwise changing the segment. These renderer-owned rules are not author-controlled navigation override metadata.
 
 The projection injects renderer-only ordering derived from source numbering so the sidebar retains teaching order even though canonical slugs omit ordering prefixes. Numeric prefixes sort numerically, including lettered positions such as `21a`; unnumbered siblings sort alphabetically. This derived order is not author-controlled navigation override metadata.
 
 All sidebar groups are collapsed by default. Starlight's standard behavior highlights the current lesson, opens its ancestor groups, and preserves the sidebar's scroll position; the initial site adds no custom scrolling or dynamic reordering. Outline documents named `stub.md` receive no special badges, labels, or visibility rules.
 
-Only existing source documents produce lesson routes. A directory without an index lesson remains a non-clickable sidebar group and does not receive a generated listing page. The site does not synthesize localized fallback routes for missing translations. The site root redirects to the first ordinal English Common lab, `/en/common/labs/computer-architecture/`; `/en/` and `/ru/` do not receive separate starter pages.
+Only existing source documents produce lesson routes. A directory without an index lesson remains a non-clickable sidebar group and does not receive a generated listing page. The site does not synthesize localized fallback routes for missing translations. The site root and `/en/` redirect to the first ordinal English Common lab, `/en/common/labs/computer-architecture/`; `/ru/` redirects to the corresponding first Russian Common lab, `/ru/common/labs/computer-architecture/`. The locale roots do not receive separate starter pages.
 
-Lab pagination follows one sequence: ordinal Common labs, then C++ labs, then data-structures-and-algorithms labs. Within each lab group, numeric order is authoritative; Assessment 1 is placed last among the C++ labs for the initial release. Non-lab lessons use ordinary sidebar-order previous and next links.
+Each locale has its own lab sequence containing lessons below that locale's `/{subject}/labs/` route. The sequence contains ordinal Common labs, then C++ labs, then data-structures-and-algorithms labs. Within each lab group, numeric source order is authoritative, so a newly added numbered lab is inserted at its numeric position; unnumbered labs follow numbered labs alphabetically. Assessment 1 is placed last among the C++ labs for the initial release. Non-lab lessons use ordinary sidebar-order previous and next links.
 
 Subject-specific navigation views are deferred to [issue #2](https://github.com/AntonC9018/course_maintenance/issues/2). A navigation view controls discoverability only: omission never restricts a lesson's direct public URL.
 
@@ -106,6 +104,7 @@ Subject-specific navigation views are deferred to [issue #2](https://github.com/
 - Compiled website output is deployed as a GitHub Pages artifact rather than committed.
 - CI and GitHub Pages deployment are part of the initial version. Shared CI support is implemented through [issue #14](https://github.com/AntonC9018/course_maintenance/issues/14), and the first course rollout is implemented through [issue #15](https://github.com/AntonC9018/course_maintenance/issues/15).
 - Each course repository keeps a thin workflow that checks out and executes its pinned `course_maintenance` submodule. Shared-tool changes reach a course through an explicit submodule-pointer commit rather than a floating workflow reference.
+- The stable CI invocation is `python3 <course_maintenance>/publish.py ci --course-repo <course_repository>`. Local publishing operations use the same executable, responsibility words, and `--course-repo` option.
 - Pull requests to `master` validate the complete site without deploying. Every successful push to `master`, including a direct commit, republishes that exact revision; failed validation leaves the preceding site live.
 - The validation check is required for ordinary pull-request merges, while repository administrators retain the protection bypass needed for direct `master` commits.
 - The initial rollout has no peer-repository checkout and no automatic deployment rollback.

@@ -29,12 +29,12 @@ The initial release does not include:
 
 A course repository supplies:
 
-- Git history and an `origin` remote from which repository identity, default branch, public GitHub URL, and GitHub Pages project URL are inferred;
+- Git history and an `origin` remote from which repository identity, public GitHub URL, and GitHub Pages project URL are inferred; the published branch is always `master`;
 - a repository-owned `course-publishing.json` file;
 - Markdown source documents below configured language roots;
 - committed lesson titles, slugs, and source backlinks.
 
-Inference failures are validation errors with actionable messages. The implementation must not require GitHub CLI or network access for an ordinary local projection when the required repository facts are already available locally.
+A missing `origin` remote is a validation error with an actionable message. Inference reads only the local `origin` configuration and requires no GitHub CLI or network access.
 
 ### Content configuration
 
@@ -103,14 +103,14 @@ None of these outputs are committed to a course repository.
 
 ## Required operations
 
-The implementation language and internal module layout are unconstrained. The command-line surface may replace the current monolithic script, but it must expose four responsibility-focused operations:
+The implementation language and internal module layout are unconstrained. The command-line surface may replace the current monolithic script, but it must expose four responsibility-focused operations through `python3 <course_maintenance>/publish.py <responsibility> <operation> --course-repo <course_repository>`:
 
 1. `metadata generate`: add missing lesson slugs and add or refresh marked source backlinks;
 2. `publishing check`: validate configuration, selected content, metadata, links, assets, and route uniqueness without writing source files;
 3. `projection build`: create a deterministic disposable web projection without compiling the site;
 4. `site build`: create the projection, invoke the pinned renderer toolchain, and produce `dist/`.
 
-Every operation accepts an explicit course-repository path. Check mode is read-only and returns a nonzero status for any error. Errors identify the source path, the violated rule, and the corrective operation when one exists.
+`<course_maintenance>` is the path to the maintenance checkout or submodule, and `<course_repository>` is the explicit path to the course-repository root. Check mode is read-only and returns a nonzero status for any error. Errors identify the source path, the violated rule, and the corrective operation when one exists.
 
 ## Functional requirements
 
@@ -118,20 +118,20 @@ Every operation accepts an explicit course-repository path. Check mode is read-o
 
 - **CFG-1:** Parse and strictly validate version 1 of `course-publishing.json`.
 - **CFG-2:** Select Markdown only from configured language roots, then apply exact repository-relative exclusions.
-- **CFG-3:** The initial configuration selects exactly 134 current Markdown lessons: 74 English and 60 Russian.
+- **CFG-3:** The initial configuration selects exactly 140 current Markdown lessons: 77 English and 63 Russian.
 - **CFG-4:** Empty, outline, and `stub.md` documents remain valid lessons.
-- **CFG-5:** Infer repository and site identity consistently in local clones, GitHub Actions checkouts, and repositories whose default branch is `master`.
+- **CFG-5:** Infer repository and site identity solely from the `origin` remote URL; a missing `origin` is a validation error.
 - **CFG-6:** Reject case-folded duplicate source paths and configuration paths that do not resolve to the intended repository entry.
 
 ### Metadata generation and validation
 
 - **META-1:** Generate a missing slug from the configured language, route section, and source path.
-- **META-2:** Slug components are lowercase kebab-case; ordering prefixes such as `01_` and `21a_` are removed; `doc.md`, `index.md`, and `README.md` collapse to their directory; `stub` remains a component.
-- **META-3:** Apply the recorded special mappings for `05a_programming_fundamentals` and `test1.md`.
+- **META-2:** Slug components are lowercase kebab-case; ordering prefixes such as `01_` and `21a_` are removed; `stub` remains a component. In each directory containing selected lessons named `index.md`, `README.md`, or `doc.md` case-insensitively, elect the first existing candidate in that precedence order as the index lesson and collapse only its slug to the directory. Any other candidate keeps `index`, `readme`, or `doc` as its final slug component.
+- **META-3:** Apply the recorded special mappings: the `05a_programming_fundamentals` directory component maps to `advanced-programming-fundamentals`, and the existing `labs/cpp/test1.md` lessons (English and Russian counterparts) map to an `assessment-1` route component. The `test1.md` mapping applies only to these existing lessons, not as a general basename rule.
 - **META-4:** Reject duplicate slugs after Unicode normalization and case folding.
 - **META-5:** Never modify an existing valid slug during generation. Invalid or conflicting existing slugs fail with a diagnostic requiring explicit correction.
 - **META-6:** Insert or replace exactly one marked source-backlink block immediately after frontmatter, using the lesson language and inferred canonical site URL.
-- **META-7:** `publishing check` rejects missing slugs and missing, duplicate, malformed, or stale backlink blocks and tells the contributor to run metadata generation.
+- **META-7:** `publishing check` rejects missing slugs and missing, duplicate, malformed, or stale backlink blocks and tells the contributor to run metadata generation. A backlink block is stale when its URL differs from the absolute website URL generated from the lesson's current slug and the inferred site URL.
 - **META-8:** Metadata generation is idempotent and ordinary course maintenance does not invoke it implicitly.
 
 ### Route and link resolution
@@ -140,8 +140,8 @@ Every operation accepts an explicit course-repository path. Check mode is read-o
 - **LINK-2:** Resolve relative links from the original source location before moving the document into the projection.
 - **LINK-3:** Preserve query strings and fragments.
 - **LINK-4:** Rewrite a link to a published Markdown target as its canonical course-site URL.
-- **LINK-5:** Rewrite excluded Markdown and ordinary files as GitHub `blob` URLs and directories as GitHub `tree` URLs, using the target repository's default branch.
-- **LINK-6:** Copy locally embedded images into the projection and rewrite image destinations to the copied assets. Other artifacts remain GitHub links.
+- **LINK-5:** Rewrite excluded Markdown and ordinary files as GitHub `blob` URLs and directories as GitHub `tree` URLs, always using the `master` branch.
+- **LINK-6:** Copy locally embedded images into the projection and rewrite image destinations to the copied assets. An image is any Markdown `![...](...)` destination, plus an `<img>` `src` if one is ever used. Other artifacts remain GitHub links.
 - **LINK-7:** Reject missing, escaping, ambiguous, or unsupported local targets instead of guessing.
 - **LINK-8:** Validate Markdown heading fragments against the target source document using the same GitHub-anchor rules as course maintenance.
 
@@ -158,15 +158,24 @@ Every operation accepts an explicit course-repository path. Check mode is read-o
 
 - **SITE-1:** Build with pinned Astro Starlight and plugin versions proven by the compatibility suite.
 - **SITE-2:** Serve canonical slugs below the repository's GitHub Pages project base with trailing-slash URLs.
-- **SITE-3:** Configure English and Russian locales without generating fallback lesson routes or `/en/` and `/ru/` starter pages.
-- **SITE-4:** Redirect `/` to `/en/common/labs/computer-architecture/`.
+- **SITE-3:** Configure English and Russian locales without generating fallback lesson routes or locale-root starter pages. Redirect `/en/` to `/en/common/labs/computer-architecture/` and `/ru/` to `/ru/common/labs/computer-architecture/`.
+- **SITE-4:** Redirect `/` to `/en/common/labs/computer-architecture/`; English is the default locale.
 - **SITE-5:** Use localized site titles and otherwise retain Starlight's default theme, layout, typography, responsive behavior, and outline presentation.
-- **SITE-6:** Produce one sidebar per locale with Common, C++, and Data Structures and Algorithms as localized top-level groups.
-- **SITE-7:** Use localized fixed labels for structural groups, index-lesson titles for their groups, `Overview` or `Обзор` for visible index links, and humanized route segments for other groups.
+- **SITE-6:** Produce one sidebar per locale with these fixed structural labels:
+
+  | Role or segment | English | Russian |
+  | --- | --- | --- |
+  | `common` | Common | Общие темы |
+  | `cpp` | C++ | C++ |
+  | `dsa` | Data Structures and Algorithms | Структуры данных и алгоритмы |
+  | `labs` | Labs | Лабораторные работы |
+  | index link | Overview | Обзор |
+
+- **SITE-7:** A group with an index lesson uses that lesson's title as the group label and the localized fixed index-link label from SITE-6 for the lesson itself. Place any unelected `index.md`, `README.md`, or `doc.md` lessons immediately after the index link, in that precedence order, as ordinary lessons. For any other group label without a fixed label or index lesson, humanize its route segment by replacing each hyphen with a space and uppercasing the first cased character without otherwise changing it; for example, `advanced-programming-fundamentals` becomes `Advanced programming fundamentals`.
 - **SITE-8:** Keep groups collapsed by default and retain Starlight's default current-page highlighting, ancestor expansion, and scroll persistence without custom reordering or scrolling.
 - **SITE-9:** Sort numbered siblings numerically, including lettered positions such as `21a`; sort unnumbered siblings alphabetically.
 - **SITE-10:** Leave groups without index lessons non-clickable and do not create synthetic listing lessons.
-- **SITE-11:** Give lab pages explicit previous and next links in this sequence: Common labs, C++ labs, then data-structures-and-algorithms labs. Place Assessment 1 last among C++ labs. Give non-lab pages ordinary sidebar-order pagination.
+- **SITE-11:** A lab page is a lesson whose canonical slug matches `/{lang}/{subject}/labs/...`. Give lab pages explicit previous and next links within one sequence per locale: Common labs, C++ labs, then data-structures-and-algorithms labs. Within a lab group, insert numbered labs by numeric source order and place unnumbered labs afterward alphabetically; place Assessment 1 last among C++ labs. Give non-lab pages ordinary sidebar-order pagination.
 - **SITE-12:** Add a localized `View on GitHub` footer link to the normal rendered source-document page, not the edit form, raw response, or projection.
 - **SITE-13:** Include Pagefind local search and index only existing published lesson routes.
 - **SITE-14:** Do not expose controls or placeholder pages for navigation views or presentations.
@@ -180,7 +189,7 @@ Every operation accepts an explicit course-repository path. Check mode is read-o
 
 ### CI and deployment
 
-- **CI-1:** `course_maintenance` owns a stable CI-facing command that accepts an explicit course-repository path and runs existing course-maintenance checks, publishing checks, the compatibility suite, and a complete static site build. Shared dependency setup and CI configuration remain in `course_maintenance`.
+- **CI-1:** `course_maintenance` owns the stable CI-facing command `python3 <course_maintenance>/publish.py ci --course-repo <course_repository>`. It runs existing course-maintenance checks, publishing checks, the compatibility suite, and a complete static site build. Shared dependency setup and CI configuration remain in `course_maintenance`.
 - **CI-2:** A course repository owns only a thin GitHub Actions workflow. It checks out the course and its pinned `course_maintenance` submodule, then invokes the shared command from that submodule; it does not fetch a separate floating maintenance or reusable-workflow revision.
 - **CI-3:** Every pull request targeting `master` runs the complete validation with read-only repository permissions. A failing validation is a required status check for ordinary pull-request merges. Pull-request jobs never deploy.
 - **CI-4:** Every push to `master`, whether direct or produced by a pull-request merge, validates and builds that exact course and submodule revision. A successful build is deployed through the official GitHub Pages artifact workflow and the `github-pages` environment. Feature-branch pushes without a pull request do not run course-site CI.
@@ -199,9 +208,9 @@ The first rollout must:
 
 1. correct `labs/algoritms` to `labs/algorithms` before generating public slugs;
 2. add the complete `course-publishing.json` with the nine recorded supporting-document exclusions;
-3. generate and review slugs and localized source backlinks for all 134 lessons;
+3. generate and review slugs and localized source backlinks for all 140 lessons;
 4. build all routes and copied images without unresolved internal links;
-5. verify that English and Russian counterparts use corresponding route structures where both exist;
+5. verify that selected English and Russian lessons are counterparts when their repository-relative source paths are identical after removing their configured language roots, and that counterpart slugs are identical after removing the leading language component;
 6. preserve all authored Markdown except intentional typo correction and generated metadata;
 7. leave projection, Mermaid, browser, and `dist/` artifacts untracked.
 

@@ -28,6 +28,18 @@ _Avoid_: Filename, source path, generated path
 The concise, language-appropriate display name stored with a lesson and used by website navigation. It describes the lesson rather than its repository position or sequence number.
 _Avoid_: Filename, navigation label
 
+**Index lesson**:
+The single lesson that represents a navigation group itself rather than one of the group's child topics.
+_Avoid_: Listing page, overview page
+
+**Language counterpart**:
+A lesson in another configured language whose source path is otherwise identical after removing the language root.
+_Avoid_: Translation fallback, similar lesson
+
+**Lab lesson**:
+A lesson whose canonical hierarchy places it inside a subject's labs group.
+_Avoid_: Exercise, practical lesson
+
 **Source document**:
 The repository-readable Markdown file that authors edit and that remains the source of truth for a lesson.
 _Avoid_: Website Markdown, generated document
@@ -41,7 +53,7 @@ A curated way of discovering a subset of lessons, such as the C++ or data-struct
 _Avoid_: Access level, permission, locked content
 
 **Lab sequence**:
-The ordered progression through a course site's lab lessons. It can cross sidebar groups and therefore does not define the ordering of non-lab material.
+The ordered progression through one language's lab lessons. It can cross sidebar groups and therefore does not define the ordering of non-lab material.
 _Avoid_: Navigation view, sidebar order
 
 **Source backlink**:
