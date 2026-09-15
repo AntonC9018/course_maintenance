@@ -20,9 +20,9 @@ It replaces the old per-task scripts (`rename_files.py`, `fix_files.py`,
 - **rename**: closes `NN_` gaps per directory, `*.md` files only (numbered
   assets such as `images/01_*.png` are never touched). Duplicate numbers
   abort that directory with an error — fix by hand, never force.
-  Lettered appendices (`21a_...`) take no number of their own: they follow
-  their parent's new number (`21_oop` → `20_oop` pulls `21a_func` →
-  `20a_func`), so `21a` always stays right after `21`.
+  Every ordered file takes its own number in sorted order; a letter
+  suffix is stripped and the file moves to the next free number
+  (`16_foo`, `16a_bar`, `17_baz` → `16_foo`, `17_bar`, `18_baz`).
 - **convert**: off unless `--convert-lists` is passed. It rewrites genuine
   ordered lists too, so enable it only for files whose numbered items are
   all meant to become `###` headers.

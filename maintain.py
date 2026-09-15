@@ -18,9 +18,10 @@ Usage:
 
 Pipeline order (matters, do not reorder):
     1. rename    - close numbering gaps in NN_name.md files per directory
-                   (old rename_files.py; runs first because it moves files).
-                   Lettered appendices (21a) follow their parent's number,
-                   so 21a always stays right after 21.
+                    (old rename_files.py; runs first because it moves files).
+                    Every ordered file takes its own number in sorted order;
+                    a letter suffix (21a) is stripped and the file moves to
+                    the next free number, so 16, 16a, 17 become 16, 17, 18.
     2. convert   - OPT-IN only (--convert-lists): turn "1. text" list items
                    into "### N. text" headers (old convert_lists_to_headers.py,
                    fixed to write back in place and to skip fenced code).
@@ -61,9 +62,9 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 
 # Ordered lab file: NN_rest, NN_MM_rest, or NN<letter>_rest (stem),
-# e.g. 01_instruction, 21a_function_execution. A letter-suffixed file is an
-# appendix to its number and is always kept glued right after it through
-# renames (21_oop -> 20_oop pulls 21a_func -> 20a_func along).
+# e.g. 01_instruction, 21a_function_execution. A letter-suffixed file is
+# treated as its own entry in sort order: on rename it takes the next free
+# number and the letter is stripped (16, 16a, 17 -> 16, 17, 18).
 ORDERED_PATTERN = re.compile(r'^(\d+)([a-z])?(?:_(\d+))?_(.+)$')
 H1_RE = re.compile(r'^(#\s+)(\d+)(\.\s+.+)')
 H3_RE = re.compile(r'^(###\s+)(\d+)(\.\s+.+)')
@@ -109,8 +110,9 @@ def plan_renames(directory: Path):
     Faithful to rename_files.py: duplicate (n1, letter, n2) aborts the
     directory, >99 ordered files aborts, 2-digit zero padding. Only *.md
     files are considered (keeps asset dirs untouched even if discovered).
-    Lettered files (21a) take no number of their own: they follow their
-    parent's new number, so 21a always stays right after 21.
+    Every ordered file consumes its own number in sorted order; a letter
+    suffix is stripped, so 16_foo, 16a_bar, 17_baz become 16_foo, 17_bar,
+    18_baz.
     """
     files = sorted(
         (f for f in directory.iterdir()
@@ -144,15 +146,11 @@ def plan_renames(directory: Path):
         return [], [f'{len(matched)} files found -- 2-digit padding supports up to 99.']
 
     ops = []
-    current = 0  # number assigned to the latest plain file
-    for f, (_n1, letter, _n2, rest, suffix) in matched:
-        if letter:
-            if current == 0:
-                current = 1  # leading appendix with no parent yet: anchor at 1
-            new_name = f'{str(current).zfill(2)}{letter}_{rest}{suffix}'
-        else:
-            current += 1
-            new_name = f'{str(current).zfill(2)}_{rest}{suffix}'
+    current = 0  # number assigned to the latest file; every ordered file,
+    # lettered or not, consumes its own number and the letter is stripped
+    for f, (_n1, _letter, _n2, rest, suffix) in matched:
+        current += 1
+        new_name = f'{str(current).zfill(2)}_{rest}{suffix}'
         if f.name != new_name:
             ops.append((f, directory / new_name))
     return ops, []
