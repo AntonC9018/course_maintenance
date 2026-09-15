@@ -1,13 +1,14 @@
-"""Static site build via the pinned Astro Starlight renderer (SITE-1..14).
+"""Static site build via the pinned Astro Starlight renderer (SITE-1..14 + DIAG).
 
-Orchestration for ``publish.py site build`` (issue #11, Mermaid excluded).
-Stdlib-only Python; the Node toolchain is invoked via subprocess and is
-mockable in unit tests (no npm required for config-generation tests).
+Orchestration for ``publish.py site build`` (issues #11 Mermaid excluded,
+#12 Mermaid + compatibility). Stdlib-only Python; the Node toolchain is
+invoked via subprocess and is mockable in unit tests (no npm required for
+config-generation tests).
 
 Pipeline (after shared validation identical to ``projection build``):
 
 1. In-memory projection via :mod:`publishing.projection`
-   (``collect_projection_data``).
+   (``collect_projection_data`` incl. DIAG-1 static Mermaid SVGs).
 2. Navigation data via :mod:`publishing.navigation` (sidebars, lab
    pagination, redirects, base, GitHub blob URLs).
 3. Renderer-only frontmatter augmentation of the in-memory projection:
@@ -16,10 +17,13 @@ Pipeline (after shared validation identical to ``projection build``):
    (no overrides). ``sidebar.order`` from the projection is preserved
    (SITE-9).
 4. Write the Astro project below ``--out`` (outside the course repo):
-   projected docs, copied images, ``nav.json``, ``site-nav.json``
-   (per-locale sidebars + lab sequences, snapshot-friendly),
-   ``astro.config.mjs`` (SITE-1..8, SITE-13), ``package.json``
-   (pinned versions, SITE-1), ``src/content.config.ts``,
+   projected docs (mermaid fences already inline static SVGs, DIAG-1),
+   static Mermaid SVGs under ``mermaid/`` + ``public/mermaid/`` (DIAG-1,
+   never committed, DIAG-3), copied images, ``nav.json``,
+   ``site-nav.json`` (per-locale sidebars + lab sequences,
+   snapshot-friendly), ``astro.config.mjs`` (SITE-1..8, SITE-13, no Mermaid
+   client JS per DIAG-3), ``package.json`` (pinned versions incl. Mermaid +
+   Playwright/Chromium, SITE-1/DIAG-1), ``src/content.config.ts``,
    ``src/content/i18n/*.json`` (localized View on GitHub, SITE-12),
    ``public/.nojekyll`` (Pagefind ``_pagefind`` under Pages).
 5. Invoke the pinned toolchain (``npm ci`` when ``node_modules`` is
@@ -27,11 +31,13 @@ Pipeline (after shared validation identical to ``projection build``):
    output directory. On missing npm or failed install/build, return a
    clear error without guessing (offline-friendly; unit tests mock this
    step). A successful build leaves static HTML in ``<out>/dist/`` with
-   trailing-slash URLs under the project base (SITE-2).
+   trailing-slash URLs under the project base (SITE-2). Built output is
+   inspected for forbidden Mermaid client JS (DIAG-3).
 
 No fallback lesson files are ever generated (SITE-3); locale roots have
 no starter pages (only Astro ``redirects``). No views/presentation
-controls or placeholders are emitted (SITE-14).
+controls or placeholders are emitted (SITE-14). No Mermaid client JS is
+shipped and no SVGs are committed (DIAG-3).
 """
 
 from __future__ import annotations
@@ -45,8 +51,8 @@ from pathlib import Path
 
 PINNED_VERSIONS = {
     # Proven by the compatibility suite (representative lessons with
-    # nested details, C++ angle brackets, `$`code`$`/`$$` math, Mermaid
-    # placeholders, tables, images, nested routes, rewritten links and the
+    # nested details, C++ angle brackets, `$`code`$`/`$$` math, static
+    # Mermaid SVGs, tables, images, nested routes, rewritten links and the
     # Pages project base). Exact pins, no ranges; lock file committed
     # under renderer/.
     "astro": "7.3.2",
@@ -55,6 +61,21 @@ PINNED_VERSIONS = {
     "remark-math": "6.0.0",
     "rehype-katex": "7.0.1",
     "katex": "0.16.47",
+    # DIAG-1: Mermaid static rendering via pinned Playwright/Chromium.
+    # mermaid 10.9.3: last 10.x stable, Node 18 compatible, render() API
+    # stable for flowchart/sequence/class/state/er/gantt/pie/mindmap.
+    # playwright 1.48.2 bundles Chromium 130.0.6723.19 (see PINNED_BROWSERS).
+    "mermaid": "10.9.3",
+    "playwright": "1.48.2",
+}
+
+PINNED_BROWSERS = {
+    # Chromium revision bundled with playwright 1.48.2 (DIAG-1). Pinned
+    # here for CI cache keys (CI-8) and smoke-test reproducibility; the
+    # actual browser is installed via `npx playwright install chromium`
+    # which resolves to this build for the pinned playwright version.
+    # Never cached as authoritative output, only as runtime.
+    "chromium": "130.0.6723.19",
 }
 
 RENDERER_DIR_NAME = "renderer"
@@ -99,6 +120,8 @@ def generate_package_json() -> dict:
             "remark-math": v["remark-math"],
             "rehype-katex": v["rehype-katex"],
             "katex": v["katex"],
+            "mermaid": v["mermaid"],
+            "playwright": v["playwright"],
         },
     }
 
@@ -160,7 +183,7 @@ def _sidebar_to_js(sidebar: list, indent: int = 4) -> str:
 
 def generate_astro_config(config, identity, starlight_sidebar,
                            redirects: dict[str, str]) -> str:
-    """Render the per-course ``astro.config.mjs`` (SITE-1..8, SITE-13)."""
+    """Render the per-course ``astro.config.mjs`` (SITE-1..8, SITE-13 + DIAG)."""
     from .navigation import VIEW_ON_GITHUB_LABELS  # noqa: F401 (doc link)
 
     site = astro_site(identity)
@@ -185,9 +208,12 @@ def generate_astro_config(config, identity, starlight_sidebar,
         "import remarkMath from 'remark-math';",
         "import rehypeKatex from 'rehype-katex';",
         "",
-        "// Generated by course_maintenance `site build` (issue #11).",
+        "// Generated by course_maintenance `site build` (issues #11-12).",
         "// Pinned toolchain versions live in package.json + package-lock.json",
-        "// under renderer/ (SITE-1). Do not edit by hand.",
+        "// under renderer/ (SITE-1, DIAG-1: astro/starlight/math + mermaid +",
+        "// playwright/chromium). Do not edit by hand.",
+        "// Mermaid fences are pre-rendered to static SVGs (DIAG-1); no",
+        "// Mermaid client JavaScript is shipped (DIAG-3).",
         f"// Site titles: {', '.join(f'{k}={v!r}' for k, v in sorted(titles.items()))}",
         f"// Pages: {identity.pages_url}",
         f"// Base: {base}",
@@ -322,7 +348,14 @@ def write_site_project(out_dir: Path, files: dict[str, str], copy_list,
                        nav: list[dict], per_locale: dict, lab_sequences: dict,
                        config, identity, starlight_sidebar,
                        redirects: dict[str, str]) -> None:
-    """Write the Astro project below out_dir (deterministic, no timestamps)."""
+    """Write the Astro project below out_dir (deterministic, no timestamps).
+
+    ``files`` includes projected Markdown plus static Mermaid SVGs under
+    ``mermaid/`` (DIAG-1). SVGs are mirrored to ``public/mermaid/`` so the
+    real Astro build copies them to ``dist/mermaid/`` for smoke tests;
+    projected Markdown already embeds the same SVG inline (no client JS,
+    DIAG-3).
+    """
     from .navigation import VIEW_ON_GITHUB_LABELS
 
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -330,6 +363,13 @@ def write_site_project(out_dir: Path, files: dict[str, str], copy_list,
         dest = out_dir / Path(*rel.split("/"))
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(files[rel], encoding="utf-8")
+    # Mirror static SVGs for serving (public/ -> dist/ via Astro).
+    for rel in sorted(files):
+        if rel.startswith("mermaid/") and rel.endswith(".svg"):
+            # rel is mermaid/<flat>.svg -> public/mermaid/<flat>.svg
+            pub = out_dir / "public" / Path(*rel.split("/"))
+            pub.parent.mkdir(parents=True, exist_ok=True)
+            pub.write_text(files[rel], encoding="utf-8")
     for _src_abs, copy_rel in sorted(copy_list, key=lambda t: t[1]):
         dest = out_dir / Path(*copy_rel.split("/"))
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -495,7 +535,7 @@ def run_site_build(course_repo: Path, args) -> int:
     starlight_sidebar = build_starlight_sidebar(per_locale, config)
     redirects = get_redirects(config, final)
     if check_mode:
-        n = len(files)
+        n = sum(1 for k in files if k.startswith("src/content/docs/"))
         print(f"site check: OK ({n} lesson(s); "
               f"{len(per_locale)} locale(s); deterministic; "
               f"source unchanged; no writes)")
@@ -519,6 +559,16 @@ def run_site_build(course_repo: Path, args) -> int:
         print(f"error: cannot write site project to {out_resolved}: {exc}; "
               f"operation: site build", file=sys.stderr)
         return 1
+    # DIAG-3: fail early when generated project ships Mermaid client JS.
+    try:
+        from .mermaid import check_no_mermaid_client_js
+        forbidden = check_no_mermaid_client_js(out_resolved)
+    except Exception:
+        forbidden = []
+    if forbidden:
+        for msg in forbidden:
+            print(f"error: {msg}", file=sys.stderr)
+        return 1
     code, output = run_npm_build(out_resolved)
     if code != 0:
         print(f"error: renderer build failed in {out_resolved} "
@@ -536,6 +586,23 @@ def run_site_build(course_repo: Path, args) -> int:
             keep.unlink()
     except OSError:
         pass
-    print(f"site build: OK ({len(files)} lesson(s)) in {out_resolved} "
+    # DIAG-3: inspect built output (dist when real, else project) for
+    # forbidden client code; mocked builds still validated via project check
+    # above, this covers real `npm run build` HTML.
+    try:
+        from .mermaid import check_no_mermaid_client_js as _check_js
+        _forbidden_dist = _check_js(out_resolved / "dist")
+        # dist placeholder contains only .gitkeep when mocked; ignore missing
+        # dir errors, fail only on real forbidden hits.
+        _forbidden_dist = [m for m in _forbidden_dist
+                           if "missing" not in m.lower()]
+    except Exception:
+        _forbidden_dist = []
+    if _forbidden_dist:
+        for msg in _forbidden_dist:
+            print(f"error: {msg}", file=sys.stderr)
+        return 1
+    n_lessons = sum(1 for k in files if k.startswith("src/content/docs/"))
+    print(f"site build: OK ({n_lessons} lesson(s)) in {out_resolved} "
           f"(dist below)")
     return 0

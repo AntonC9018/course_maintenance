@@ -21,16 +21,24 @@ Stdlib-only. Layout (one module per responsibility, extensible for #12-15):
 - :mod:`publishing.check` -- read-only `publishing check` handler
   (config + identity + inventory + metadata + links).
 - :mod:`publishing.projection` -- deterministic disposable web projection
-  (PROJ-1..PROJ-6, #10): backlink strip, H1-preserving heading shift,
-  $`code`$ -> $code$ math (PROJ-3 rejects ambiguous), link rewriting via
-  links.rewrite_document + image copies, renderer-only sidebar.order +
-  nav.json, placeholder astro/mermaid/dist.
+  (PROJ-1..PROJ-6, #10; DIAG-1/2/4, #12): backlink strip, H1-preserving
+  heading shift, $`code`$ -> $code$ math (PROJ-3 rejects ambiguous), Mermaid
+  fences -> static SVGs (DIAG-1, invalid fails DIAG-2, IDs normalized
+  DIAG-4), link rewriting via links.rewrite_document + image copies,
+  renderer-only sidebar.order + nav.json, mermaid SVGs + placeholder
+  astro/dist.
 - :mod:`publishing.navigation` -- pure Starlight navigation data
-  (SITE-2..14 excl Mermaid, #11): humanize, fixed labels, per-locale
-  sidebars, lab sequences/pagination, redirects, blob URLs.
-- :mod:`publishing.site` -- `site build` handler (#11): projection +
-  navigation + pinned Astro/Starlight scaffold (renderer/) + dist/ via
-  `npm ci`/`npm run build` (mockable in unit tests).
+  (SITE-2..14, #11; DIAG-compatible, #12): humanize, fixed labels,
+  per-locale sidebars, lab sequences/pagination, redirects, blob URLs.
+- :mod:`publishing.site` -- `site build` handler (#11 + #12): projection
+  (incl. static Mermaid) + navigation + pinned Astro/Starlight/Mermaid +
+  Playwright/Chromium scaffold (renderer/) + dist/ via `npm ci`/`npm run
+  build` (mockable in unit tests) + DIAG-3 forbidden-JS inspection.
+- :mod:`publishing.mermaid` -- static Mermaid rendering (#12, DIAG-1..4):
+  fence-aware extraction, validation (DIAG-2), deterministic SVG
+  normalization (DIAG-4), Playwright/Chromium toolchain seam (mockable
+  offline), inline replacement + disposable SVG files, forbidden client-JS
+  checks (DIAG-3).
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Deterministic Markdown web projections (PROJ-1..PROJ-6, issue #10).
+"""Deterministic Markdown web projections (PROJ-1..PROJ-6 + DIAG-1..DIAG-4).
 
 Builds a disposable, slug-shaped Starlight content tree below an explicit
 ``--out`` directory (or an auto temp dir outside the source tree). Never
@@ -20,22 +20,30 @@ Pipeline per lesson (deterministic, sorted):
    (empty ``$`````$``, ``$`` inside, double backticks, unclosed ``$$``)
    is rejected with PROJ-3 rather than guessed. Fenced code untouched.
    Sources are never normalized.
-5. PROJ-5: inject renderer-only ``sidebar.order`` derived from source
+5. DIAG-1/2/4: convert every `````mermaid`` fence into a deterministic
+   static SVG via :mod:`publishing.mermaid` (pinned Playwright/Chromium
+   when available, deterministic fallback offline). Invalid diagrams fail
+   with source path + Mermaid diagnostic (DIAG-2); IDs normalized for
+   repeatability (DIAG-4). No client JS emitted (DIAG-3).
+6. PROJ-5: inject renderer-only ``sidebar.order`` derived from source
    numbering (numeric incl ``21a``, unnumbered alphabetical, per
    slug-parent group for SITE-9) plus ``nav.json``. Never written back.
-6. PROJ-6: byte-identical outputs for identical inputs/config. No
+7. PROJ-6: byte-identical outputs for identical inputs/config. No
    timestamps are emitted anywhere (documented here); second build of
    the same inputs is byte-identical.
 
 Outputs below ``<out>`` (all deterministic, no timestamps):
 
-- ``src/content/docs/<slug>.md`` -- projected lessons;
+- ``src/content/docs/<slug>.md`` -- projected lessons (mermaid fences
+  replaced by inline static SVGs);
+- ``mermaid/<flat-slug>-<idx>.svg`` -- static Mermaid SVGs (DIAG-1, never
+  committed, DIAG-3);
 - ``<copy_rel>`` (``assets/<owner>/<repo>/<repo-rel>``) -- copied images,
   destinations are the verbatim ``rewrite_document`` URLs
   (projection-root-relative placeholders; #11 makes them site-absolute);
 - ``astro.config.mjs`` -- placeholder renderer config;
 - ``nav.json`` -- sorted renderer nav data (slug/title/order/lang/source);
-- ``mermaid/README.md`` -- placeholder (full Mermaid SVG rendering in #12);
+- ``mermaid/README.md`` -- documents the static SVG directory;
 - ``dist/.gitkeep`` -- placeholder (full static site in #11).
 
 PROJ-4: fenced code, tables, nested ``<details>``, raw C++ code spans and
@@ -418,11 +426,14 @@ def collect_projection_data(course_repo: Path, config, identity,
                             inventory, final_slugs, link_index):
     """In-memory projection. Returns (files, copies, nav, errors).
 
-    files: dict output_rel-posix -> text. copies: sorted list of
-    (abs source Path, copy_rel). nav: sorted list of dicts. errors:
-    sorted diagnostics with source path + rule + fix.
+    files: dict output_rel-posix -> text (markdown under
+    ``src/content/docs/`` plus static Mermaid SVGs under ``mermaid/``,
+    DIAG-1). copies: sorted list of (abs source Path, copy_rel). nav:
+    sorted list of dicts. errors: sorted diagnostics with source path +
+    rule + fix (including DIAG-2 for unrenderable diagrams).
     """
     from .links import rewrite_document
+    from .mermaid import process_mermaid_blocks
 
     repo = Path(course_repo).resolve()
     orders = compute_orders([le.repo_rel for le in inventory.lessons],
@@ -431,6 +442,7 @@ def collect_projection_data(course_repo: Path, config, identity,
     files: dict[str, str] = {}
     copies: dict[str, Path] = {}
     copy_rel_by_src: dict[str, str] = {}
+    mermaid_files: dict[str, str] = {}
     nav: list[dict] = []
     errors: list[str] = []
 
@@ -468,6 +480,20 @@ def collect_projection_data(course_repo: Path, config, identity,
             errors.append(f"{rel}: {e}; {_FIX_PROJECTION}")
         if math_errors:
             continue
+        # DIAG-1: Mermaid fences -> deterministic static SVGs (after math so
+        # SVG content is final; fences were skipped by link/math stages).
+        converted2, svg_files, mermaid_errors = process_mermaid_blocks(
+            converted, source_path=rel, slug=slug)
+        for e in mermaid_errors:
+            errors.append(e)
+        if mermaid_errors:
+            continue
+        for svg_rel, svg_content in svg_files:
+            # Slugs are unique; diagram indices unique per file, so rels
+            # are unique. Defensive: on collision keep first (deterministic).
+            if svg_rel not in mermaid_files:
+                mermaid_files[svg_rel] = svg_content
+        converted = converted2
         order = orders.get(rel, 1)
         if has_fm2:
             fm3 = inject_order(fm2, order)
@@ -501,6 +527,10 @@ def collect_projection_data(course_repo: Path, config, identity,
     copy_list = sorted(
         ((copies[k], copy_rel_by_src.get(k, Path(k).name)) for k in copies),
         key=lambda t: t[1])
+    # Merge static Mermaid SVGs (DIAG-1, DIAG-4 deterministic) into files so
+    # both projection and site writers emit them without signature changes.
+    for svg_rel in sorted(mermaid_files):
+        files[svg_rel] = mermaid_files[svg_rel]
     # deterministic file order
     files = dict(sorted(files.items()))
     return files, copy_list, nav, sorted(errors)
@@ -524,10 +554,16 @@ def _astro_config_text(config, identity) -> str:
 
 def _mermaid_readme_text() -> str:
     return (
-        '# Mermaid placeholder (issue #10)\n\n'
-        'Static Mermaid SVGs are built in #12 (DIAG-1..DIAG-4) with pinned\n'
-        'Playwright/Chromium. This directory reserves the location so the\n'
-        'projection shape is stable. No timestamps emitted (PROJ-6).\n')
+        '# Static Mermaid SVGs (issue #12, DIAG-1..DIAG-4)\n\n'
+        'Each ````mermaid`` fence in the projected lessons is rendered to a\n'
+        'deterministic static SVG during the build using pinned Playwright +\n'
+        'Chromium (renderer/package.json + render-mermaid.mjs; offline\n'
+        'fallback is deterministic and normalized for repeatable tests).\n'
+        'Projected Markdown embeds the same SVG inline (no Mermaid client\n'
+        'JavaScript is shipped, DIAG-3) and this directory holds one\n'
+        '``<flat-slug>-<idx>.svg`` per diagram for inspection/smoke tests.\n'
+        'All files here are disposable build artifacts, never committed.\n'
+        'No timestamps emitted (PROJ-6, DIAG-4).\n')
 
 
 def write_projection(out_dir: Path, files: dict[str, str],
@@ -674,7 +710,7 @@ def run_projection_build(course_repo: Path, args) -> int:
         return 1
 
     if check_mode:
-        n = len(files)
+        n = sum(1 for k in files if k.startswith("src/content/docs/"))
         print(f"projection check: OK ({n} lesson(s); "
               f"{len(copy_list)} image(s); deterministic; "
               f"source unchanged; no writes)")
@@ -699,6 +735,8 @@ def run_projection_build(course_repo: Path, args) -> int:
               f"{_FIX_PROJECTION}", file=sys.stderr)
         return 1
 
-    print(f"projection build: OK ({len(files)} lesson(s), "
+    print(f"projection build: OK "
+          f"({sum(1 for k in files if k.startswith('src/content/docs/'))} "
+          f"lesson(s), "
           f"{len(copy_list)} image(s)) in {out_resolved}")
     return 0
