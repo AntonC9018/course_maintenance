@@ -1,4 +1,5 @@
-"""Course publishing: configuration, identity, inventory, metadata, links (#7-9).
+"""Course publishing: configuration, identity, inventory, metadata, links,
+projection (#7-10).
 
 Stdlib-only. Layout (one module per responsibility, extensible for #10-15):
 
@@ -18,9 +19,13 @@ Stdlib-only. Layout (one module per responsibility, extensible for #10-15):
   preservation (LINK-3), canonical/blob/tree/image rewriting (LINK-4..6),
   strict rejection (LINK-7) and GitHub-anchor validation (LINK-8).
 - :mod:`publishing.check` -- read-only `publishing check` handler
-  (config + identity + inventory + metadata + links). Future issues add
-  projection (#10-11), site (#12-13), CI (#14) without touching this
-  model: import LessonInventory / PublishingConfig and extend.
+  (config + identity + inventory + metadata + links).
+- :mod:`publishing.projection` -- deterministic disposable web projection
+  (PROJ-1..PROJ-6, #10): backlink strip, H1-preserving heading shift,
+  $`code`$ -> $code$ math (PROJ-3 rejects ambiguous), link rewriting via
+  links.rewrite_document + image copies, renderer-only sidebar.order +
+  nav.json, placeholder astro/mermaid/dist. Future issues add
+  site (#11-13), CI (#14) without touching this model.
 """
 
 from __future__ import annotations

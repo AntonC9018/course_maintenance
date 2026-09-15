@@ -17,9 +17,11 @@ from tests.helpers import REPO_ROOT, run_publish
 PUBLISH_PY = REPO_ROOT / "publish.py"
 
 REQUIRED_OPS = [
-    ("projection", "build"),
     ("site", "build"),
 ]
+
+# `projection build` is implemented since issue #10 (deterministic
+# disposable projection).
 
 # `publishing check` is implemented since issue #7 (read-only validation).
 # `metadata generate` is implemented since issue #8 (explicit generation).
@@ -108,6 +110,16 @@ class TestPublishDispatcher(unittest.TestCase):
         # not "not yet implemented".
         proc = run_publish(
             "metadata", "generate", "--course-repo", str(self.root))
+        self.assertEqual(proc.returncode, 1)
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("not yet implemented", combined.lower())
+        self.assertIn("course-publishing.json", combined)
+
+    def test_projection_build_implemented(self):
+        # Implemented in #10: missing config is a validation error (exit 1),
+        # not "not yet implemented".
+        proc = run_publish(
+            "projection", "build", "--course-repo", str(self.root))
         self.assertEqual(proc.returncode, 1)
         combined = proc.stdout + proc.stderr
         self.assertNotIn("not yet implemented", combined.lower())

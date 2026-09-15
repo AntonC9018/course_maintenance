@@ -110,6 +110,16 @@ except ImportError:  # pragma: no cover - publishing package always present
     pass
 
 
+# Issue #10: real `projection build` (deterministic disposable projection).
+# Overwrites the stub above with one register() line; no logic lives here.
+try:
+    from publishing.projection import run_projection_build  # noqa: E402
+    register("projection", "build", run_projection_build,
+             "create a deterministic disposable web projection")
+except ImportError:  # pragma: no cover - publishing package always present
+    pass
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         description="Course maintenance dispatcher: "
@@ -121,6 +131,13 @@ def build_parser():
     ap.add_argument("--course-repo", default=".",
                     help="explicit path to the course-repository root "
                          "(default: .)")
+    ap.add_argument("--out", default=None,
+                    help="explicit projection output directory "
+                         "(projection build only; must be outside the "
+                         "course repo; default: auto temp dir)")
+    ap.add_argument("--check", action="store_true",
+                    help="read-only validation without writing "
+                         "(projection build only)")
     return ap
 
 
