@@ -1,6 +1,6 @@
 # Course publishing design
 
-This document captures the agreed initial design for publishing the course repositories as GitHub Pages websites. Deferred capabilities are tracked as GitHub issues rather than included in the first implementation.
+This document captures the agreed initial design for publishing course repositories as GitHub Pages websites. The first rollout targets the data-structures-and-algorithms repository; the shared implementation remains suitable for adding the C# repository afterward. Deferred capabilities are tracked as GitHub issues.
 
 ## Product and hosting
 
@@ -13,6 +13,9 @@ This document captures the agreed initial design for publishing the course repos
 ## Source documents and web projections
 
 - Repository Markdown remains the authoring source of truth and retains its original relative links.
+- Each course repository initially uses a `course-publishing.json` content configuration that selects language content roots and may explicitly include or exclude Markdown source documents. The configuration does not enumerate every lesson individually. The format is provisional and may be replaced when the implementation is restructured.
+- Site and repository identity are initially inferred from repository context rather than required as configuration.
+- The initial data-structures-and-algorithms configuration publishes all Markdown under `en` and `ru` except supporting README files in `linker_examples`, `snake/raylib-example`, `vector`, `waves_algorithm`, `waves_algorithm/minecraft`, and `sorting/examples`, plus `ru/labs/cpp/README.md`. Outline and stub lessons remain published.
 - Each published lesson stores an explicit `title` and stable, nested `slug` in YAML frontmatter.
 - Each source document contains a source-only backlink labelled `This lesson on the website`. Russian documents use a natural Russian equivalent.
 - The backlink is enclosed in reserved markers so the web projection can omit it.
@@ -46,7 +49,7 @@ The initial data-structures-and-algorithms mapping is:
 
 `05a_programming_fundamentals` uses `advanced-programming-fundamentals` to distinguish it from `05_programming_fundamentals`. `test1.md` uses `assessment-1` as its public route component.
 
-The initial C# mapping is:
+The planned C# rollout uses this mapping:
 
 | Source | Canonical section |
 | --- | --- |
@@ -61,23 +64,35 @@ The `05_dependenices.md` typo is corrected before its slug is generated.
 The build constructs an index from source paths to canonical lesson routes across a small allowlist of participating repositories. It preserves query strings and fragments, then projects links as follows:
 
 - a Markdown target published by a known course repository becomes its canonical website URL;
+- a Markdown target excluded from publication becomes a GitHub `blob` URL;
 - a code or other repository file becomes a GitHub `blob` URL;
 - a repository directory becomes a GitHub `tree` URL;
+- a locally embedded image is copied into the web projection so it displays on the course site; other repository artifacts remain linked rather than copied;
 - GitHub file and directory links use the target repository's default branch;
 - an unresolved local target is a validation error rather than a guessed link.
 
 ## Navigation
 
-For the initial release, the projection tree follows canonical slugs and Starlight derives its sidebar from that tree. Subject-specific navigation views are deferred to [issue #2](https://github.com/AntonC9018/course_maintenance/issues/2). A navigation view controls discoverability only: omission never restricts a lesson's direct public URL.
+For the initial release, the projection tree follows canonical slugs and Starlight derives its sidebar from that tree. The projection injects renderer-only ordering derived from source numbering so the sidebar retains teaching order even though canonical slugs omit ordering prefixes. This derived order is not author-controlled navigation override metadata. Only existing source documents produce lesson routes; the site does not synthesize localized fallback routes for missing translations. Subject-specific navigation views are deferred to [issue #2](https://github.com/AntonC9018/course_maintenance/issues/2). A navigation view controls discoverability only: omission never restricts a lesson's direct public URL.
+
+## Renderer compatibility
+
+- Inline mathematical formulas use the repository's GitHub-friendly `$`code`$` source notation. Display formulas use GitHub's `$$` block notation. The web projection may deterministically translate either notation into renderer input, but source documents are not normalized to the renderer's preferred delimiters.
+- Mermaid diagrams are rendered to SVG during the build. Generated SVGs are ephemeral build artifacts and are never committed.
+- Raw C++ angle brackets in prose must remain inside code spans; tables and nested `<details>` use the renderer's supported Markdown forms.
 
 ## Maintenance and delivery
 
-- Maintenance writes missing slugs and source backlinks locally.
-- An optional pre-commit hook may run maintenance and stage its generated changes.
-- CI checks for missing or stale generated metadata and never self-commits.
+- An explicit local metadata-generation operation writes missing slugs and source backlinks before the site is published. Routine maintenance does not generate them as a side effect.
+- Existing slugs are validated but never silently regenerated after source files move. The marked source-backlink block may be refreshed when its generated URL changes.
+- The source backlink immediately follows YAML frontmatter, is enclosed by `<!-- course-site-backlink:start -->` and `<!-- course-site-backlink:end -->`, and uses `This lesson on the website` in English or `Этот урок на сайте` in Russian.
+- An optional pre-commit hook may run metadata generation and stage its generated changes.
+- CI checks for missing or stale generated metadata, fails with instructions to run metadata generation, and never self-commits.
 - Compiled website output is deployed as a GitHub Pages artifact rather than committed.
-- CI implementation is deferred to [issue #4](https://github.com/AntonC9018/course_maintenance/issues/4).
+- CI and GitHub Pages deployment are part of the initial version. Their detailed design is handled separately in [issue #4](https://github.com/AntonC9018/course_maintenance/issues/4).
+
+The implementation may replace the current monolithic maintenance script with responsibility-focused components and may use a language other than Python. Compatibility with the existing internal structure is not a design constraint; restructuring begins only when implementation is explicitly authorized.
 
 ## Compatibility spike
 
-Before production implementation, build representative lessons with Starlight and verify nested `<details>` blocks with Markdown, raw C++ angle-bracket text, math, Mermaid, tables, images, stable nested routes, rewritten links, and the GitHub Pages project base. The spike is disposable evidence-gathering work; a serious incompatibility may reopen the renderer decision.
+Before production implementation, build representative lessons with Starlight and verify nested `<details>` blocks with Markdown, raw C++ angle-bracket text, math, Mermaid, tables, images, stable nested routes, rewritten links, and the GitHub Pages project base. The spike is disposable evidence-gathering work. Plugins and deterministic web-projection transforms are acceptable; reopen the renderer decision if representative content cannot be rendered faithfully without widespread source-document rewrites or an unbounded compatibility layer.

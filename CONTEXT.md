@@ -12,6 +12,10 @@ _Avoid_: Documentation repository, website repository
 The public website published from one course repository. Other course sites may link to it, but do not own or deploy its lessons.
 _Avoid_: Portal, aggregate site
 
+**Content configuration**:
+The repository-owned selection of language content roots and explicit inclusion or exclusion patterns that determines which Markdown source documents are lessons.
+_Avoid_: Lesson manifest, website configuration
+
 **Lesson**:
 A Markdown source document selected for publication by a course repository's content configuration. A lesson may be incomplete, empty, or presentation-oriented.
 _Avoid_: Page, article
