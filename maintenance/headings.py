@@ -75,6 +75,27 @@ def has_h1(text: str) -> bool:
     return False
 
 
+def is_lesson(text: str) -> bool:
+    """True when the file carries lesson metadata (a ``slug:`` frontmatter key).
+
+    Only published lessons need an H1 (the page title derives from it).
+    Non-lesson docs (repo README, agent instructions, excluded asset
+    READMEs) share the rename/links hygiene but must not trip the H1
+    requirement. Frontmatter, when present, is the leading ``---`` block,
+    so no fence tracking is needed to read it.
+    """
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != '---':
+        return False
+    for line in lines[1:]:
+        stripped = line.strip()
+        if stripped == '---' or stripped == '...':
+            break
+        if re.match(r'^slug\s*:', line):
+            return True
+    return False
+
+
 def run_headings(files: list, check_only: bool, quiet: bool):
     """Fix H1/H3 headings. Returns number of files changed."""
     changed = 0
@@ -85,7 +106,7 @@ def run_headings(files: list, check_only: bool, quiet: bool):
         new_text, h1_msgs, h3_msgs, h3_count = fix_headings_in_text(
             original, h1_number)
         if new_text == original:
-            if not has_h1(new_text):
+            if not has_h1(new_text) and is_lesson(new_text):
                 changed += 1
                 print(f'MISSING H1 {path.name}  '
                       f'(expected exactly one `# Title`; '
@@ -98,7 +119,7 @@ def run_headings(files: list, check_only: bool, quiet: bool):
         changed += 1
         for msg in h1_msgs + h3_msgs:
             print(f'  {msg}')
-        if not has_h1(new_text):
+        if not has_h1(new_text) and is_lesson(new_text):
             print(f'MISSING H1 {path.name}  '
                   f'(expected exactly one `# Title`; '
                   f'the page title is derived from the H1)')

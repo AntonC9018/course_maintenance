@@ -1,10 +1,12 @@
 """Heading resequencing regression coverage (seam: maintenance.headings)."""
 
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
 
-from maintenance.headings import fix_headings_in_text, run_headings
+from maintenance.headings import fix_headings_in_text, is_lesson, run_headings
 from tests.helpers import write
 
 
@@ -50,6 +52,28 @@ class TestHeadings(unittest.TestCase):
         changed = run_headings([p], check_only=True, quiet=True)
         self.assertEqual(changed, 1)
         self.assertEqual(p.read_text(encoding="utf-8"), "# 7. Title\n")
+
+    def test_missing_h1_only_for_lesson_files(self):
+        self.assertTrue(is_lesson("---\nslug: en/x\n---\ntext\n"))
+        self.assertFalse(is_lesson("no frontmatter\n"))
+        self.assertFalse(is_lesson("---\ntitle: T\n---\ntext\n"))
+
+    def test_non_lesson_without_h1_is_clean(self):
+        p = write(self.root / "README.md", "Just docs, no H1.\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            changed = run_headings([p], check_only=True, quiet=True)
+        self.assertEqual(changed, 0)
+        self.assertNotIn("MISSING H1", out.getvalue())
+
+    def test_lesson_without_h1_is_flagged(self):
+        p = write(self.root / "03_topic.md",
+                  "---\nslug: en/x\n---\nNo H1 here.\n")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            changed = run_headings([p], check_only=True, quiet=True)
+        self.assertEqual(changed, 1)
+        self.assertIn("MISSING H1 03_topic.md", out.getvalue())
 
 
 if __name__ == "__main__":

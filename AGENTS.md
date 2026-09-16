@@ -28,6 +28,9 @@ It replaces the old per-task scripts (`rename_files.py`, `fix_files.py`,
   all meant to become `###` headers.
 - **headings**: `H1` number := `NN_` filename prefix; all `### N.` headers
   resequenced `1..N`. Files whose `H1` has no number are left alone.
+  `MISSING H1` is reported only for lesson files (those carrying a
+  `slug:` frontmatter key); non-lesson docs share the other hygiene
+  but must not trip the H1 requirement.
 - **links**: repairs file links broken by renames and anchors broken by
   heading resequencing. Skips external URLs and code blocks/spans.
   `BROKEN` lines it cannot fix need a human — report them, don't guess.
