@@ -1,4 +1,4 @@
-"""Static site build via the pinned Astro Starlight renderer (SITE-1..15 + DIAG).
+"""Static site build via the pinned Astro Starlight renderer (SITE-1..16 + DIAG).
 
 Orchestration for ``publish.py site build`` (issues #11 Mermaid excluded,
 #12 Mermaid + compatibility). Stdlib-only Python; the Node toolchain is
@@ -292,13 +292,15 @@ def _format_prev_next(link: str | None, label: str | None):
 
 def augment_projection_files(files: dict[str, str], nav: list[dict],
                              identity, repo) -> dict[str, str]:
-    """Inject lab prev/next + per-page editUrl (SITE-11/SITE-12).
+    """Inject lab prev/next + per-page editUrl (SITE-11/SITE-12, SITE-16).
 
     ``files`` maps ``src/content/docs/<slug>.md`` to text (in-memory
     projection). Returns a new dict; inputs unchanged. Non-lab pages keep
-    sidebar-order pagination (no prev/next keys).
+    sidebar-order pagination (no prev/next keys). Lab prev/next labels
+    use SITE-16 display labels so they match the sidebar.
     """
-    from .navigation import github_blob_url, is_lab_slug, lab_pagination
+    from .navigation import (
+        github_blob_url, is_lab_slug, lab_display_label, lab_pagination)
 
     base = astro_base(identity).rstrip("/")
     by_slug = {e["slug"]: e for e in nav}
@@ -307,6 +309,12 @@ def augment_projection_files(files: dict[str, str], nav: list[dict],
     for e in nav:
         # nav has ``source`` repo_rel; fall back to output-derived.
         source_by_slug[e["slug"]] = e.get("source", "")
+
+    def display_label(slug: str) -> str:
+        return lab_display_label(
+            slug, source_by_slug.get(slug, ""),
+            title_by_slug.get(slug, ""))
+
     pag = lab_pagination(nav)
     out: dict[str, str] = {}
     for rel, text in files.items():
@@ -332,8 +340,8 @@ def augment_projection_files(files: dict[str, str], nav: list[dict],
             def page_url(s: str) -> str:
                 return f"{base}/{s}/"
 
-            prev_label = title_by_slug.get(prev_slug, "") if prev_slug else None
-            next_label = title_by_slug.get(next_slug, "") if next_slug else None
+            prev_label = display_label(prev_slug) if prev_slug else None
+            next_label = display_label(next_slug) if next_slug else None
             prev_val = _format_prev_next(
                 page_url(prev_slug) if prev_slug else None, prev_label)
             next_val = _format_prev_next(

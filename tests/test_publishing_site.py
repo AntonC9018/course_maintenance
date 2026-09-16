@@ -781,5 +781,167 @@ class TestSiteBuildOp(unittest.TestCase):
         self.assertTrue((self.out / "astro.config.mjs").is_file())
 
 
+class TestLabNumberDisplay(unittest.TestCase):
+    """Numbered lab labels prefixed to the left (SITE-16)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "course"
+        make_repo(self.root, dict(RICH_FILES))
+        self.config, self.identity, self.final, self.files, \
+            self.copies, self.nav = load_nav(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_unit_numbered_lab_unpadded(self):
+        from publishing.navigation import lab_display_label
+        self.assertEqual(
+            lab_display_label("en/common/labs/computer-architecture",
+                              "en/labs/common/01_computer_architecture.md",
+                              "Arch"),
+            "1. Arch")
+
+    def test_unit_lettered(self):
+        from publishing.navigation import lab_display_label
+        self.assertEqual(
+            lab_display_label("en/common/labs/appendix",
+                              "en/labs/common/21a_appendix.md",
+                              "Appendix"),
+            "21a. Appendix")
+
+    def test_unit_unnumbered_lab_plain(self):
+        from publishing.navigation import lab_display_label
+        self.assertEqual(
+            lab_display_label("en/cpp/labs/assessment-1",
+                              "en/labs/cpp/test1.md",
+                              "Assessment 1"),
+            "Assessment 1")
+        self.assertEqual(
+            lab_display_label("en/common/labs/notes",
+                              "en/labs/common/notes.md",
+                              "Notes"),
+            "Notes")
+
+    def test_unit_non_lab_plain_despite_numbered_source(self):
+        from publishing.navigation import lab_display_label
+        self.assertEqual(
+            lab_display_label("en/common/intro",
+                              "en/00_intro/01_intro.md",
+                              "Intro"),
+            "Intro")
+
+    def test_unit_ru_same_numbers(self):
+        from publishing.navigation import lab_display_label
+        self.assertEqual(
+            lab_display_label("ru/common/labs/computer-architecture",
+                              "ru/labs/common/01_computer_architecture.md",
+                              "Арх"),
+            "1. Арх")
+
+    def test_unit_overview_untouched_and_deterministic(self):
+        from publishing.navigation import build_sidebars, lab_display_label
+        first = lab_display_label(
+            "en/common/labs/computer-architecture",
+            "en/labs/common/01_computer_architecture.md", "Arch")
+        second = lab_display_label(
+            "en/common/labs/computer-architecture",
+            "en/labs/common/01_computer_architecture.md", "Arch")
+        self.assertEqual(first, second)
+        sidebars = build_sidebars(self.nav, self.config)
+        en_common = next(
+            g for g in sidebars["en"] if g["label"] == "Common Index Title")
+        self.assertEqual(en_common["items"][0]["label"], "Overview")
+        ru_common = next(
+            g for g in sidebars["ru"] if g["label"] == "Общий Индекс")
+        self.assertEqual(ru_common["items"][0]["label"], "Обзор")
+
+    def test_sidebar_prefixed_order_assessment_last_plain(self):
+        from publishing.navigation import build_sidebars
+
+        def find_group(items, label):
+            for n in items:
+                if n.get("label") == label and "items" in n:
+                    return n
+                if "items" in n:
+                    r = find_group(n["items"], label)
+                    if r is not None:
+                        return r
+            return None
+
+        sidebars = build_sidebars(self.nav, self.config)
+        en_common = next(
+            g for g in sidebars["en"] if g["label"] == "Common Index Title")
+        labs = find_group([en_common], "Labs")
+        self.assertIsNotNone(labs)
+        self.assertEqual(
+            [(x["label"], x["slug"]) for x in labs["items"]],
+            [
+                ("1. Arch", "en/common/labs/computer-architecture"),
+                ("2. Second", "en/common/labs/second"),
+                ("21a. Appendix", "en/common/labs/appendix"),
+                ("Notes", "en/common/labs/notes"),
+            ])
+        # C++ labs: numbered prefixed, unnumbered + assessment plain,
+        # assessment last.
+        cpp_top = next(g for g in sidebars["en"] if g["label"] == "C++")
+        cpp_labs = find_group([cpp_top], "Labs")
+        self.assertIsNotNone(cpp_labs)
+        self.assertEqual(
+            [(x["label"], x["slug"]) for x in cpp_labs["items"]],
+            [
+                ("1. First", "en/cpp/labs/first"),
+                ("2. Cpp Second", "en/cpp/labs/second"),
+                ("Zeta", "en/cpp/labs/notes"),
+                ("Assessment 1", "en/cpp/labs/assessment-1"),
+            ])
+
+    def test_starlight_explicit_lab_labels_omit_nonlab(self):
+        from publishing.navigation import (
+            build_sidebars, build_starlight_sidebar, strip_lang)
+        per_locale = build_sidebars(self.nav, self.config)
+        sidebar = build_starlight_sidebar(per_locale, self.config)
+
+        def find_link(items, rest):
+            for n in items:
+                if n.get("slug") == rest:
+                    return n
+                if "items" in n:
+                    r = find_link(n["items"], rest)
+                    if r is not None:
+                        return r
+            return None
+
+        lab = find_link(sidebar, "common/labs/computer-architecture")
+        self.assertIsNotNone(lab)
+        self.assertEqual(lab.get("label"), "1. Arch")
+        self.assertEqual(lab.get("translations", {}).get("ru"), "1. Арх")
+        unnumbered = find_link(sidebar, "cpp/labs/assessment-1")
+        self.assertIsNotNone(unnumbered)
+        # Unnumbered labs keep plain title but still need an explicit
+        # label (same rule, no special-casing of the Starlight shape).
+        self.assertEqual(unnumbered.get("label"), "Assessment 1")
+        nonlab = find_link(sidebar, "common/intro")
+        self.assertIsNotNone(nonlab)
+        self.assertNotIn("label", nonlab)
+        # Astro config contains the prefixed strings.
+        from publishing.navigation import get_redirects
+        from publishing.site import generate_astro_config
+        redirects = get_redirects(self.config, self.final)
+        text = generate_astro_config(
+            self.config, self.identity, sidebar, redirects)
+        self.assertIn("1. Arch", text)
+        self.assertIn("21a. Appendix", text)
+
+    def test_prev_next_labels_match_sidebar(self):
+        from publishing.site import augment_projection_files
+        aug = augment_projection_files(
+            self.files, self.nav, self.identity, self.root)
+        notes = aug["src/content/docs/en/common/labs/notes.md"]
+        # Prev is 21a appendix, next crosses to first C++ lab.
+        self.assertIn("21a. Appendix", notes)
+        self.assertIn("1. First", notes)
+
+
 if __name__ == "__main__":
     unittest.main()

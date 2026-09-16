@@ -1,4 +1,4 @@
-"""Starlight navigation data (SITE-2..SITE-15, issue #11).
+"""Starlight navigation data (SITE-2..SITE-16, issue #11).
 
 Pure, stdlib-only helpers for locale-prefixed routes, redirects, sidebar
 generation, lab pagination, GitHub source links, Pagefind and base path.
@@ -9,7 +9,9 @@ Sidebar model (per locale, snapshot-friendly):
 
 - link: ``{"label": str, "slug": full_slug}`` where full_slug includes the
   language prefix (``en/...``), matching ``nav.json`` slugs and
-  ``src/content/docs/<slug>.md`` projection paths.
+  ``src/content/docs/<slug>.md`` projection paths. Numbered lab lessons
+  (SITE-16) carry a prefixed label ``"{n}. {title}"``; all other lessons
+  carry their plain title.
 - group: ``{"label": str, "collapsed": True, "items": [...]}`` (never
   clickable, never synthetic; SITE-10). Indexless groups additionally get
   an Astro redirect to their first descendant lesson (SITE-15;
@@ -18,7 +20,10 @@ Sidebar model (per locale, snapshot-friendly):
 
 Starlight conversion (``to_starlight_sidebar``) strips the language prefix
 (Starlight slugs exclude the locale directory) and adds ``translations``
-for group labels and index Overview links. Ordinary lesson links use
+for group labels, index Overview links and lab lesson links (SITE-16).
+Lab links use explicit ``{"slug": rest, "label": ...}`` so the
+source-number prefix shows to the left of the label using only the label
+string (no badge/CSS, SITE-5); ordinary non-lab lesson links use
 ``{"slug": rest}`` without an explicit label so Starlight renders the
 per-locale frontmatter title automatically.
 
@@ -43,6 +48,15 @@ group numbered labs use projection order and unnumbered follow
 alphabetically; ``assessment-1`` is last among C++ labs. Lab pages get
 explicit prev/next; non-lab pages use sidebar-order pagination (no
 frontmatter overrides).
+
+Lab numbers (SITE-16): numbered lab lessons display their source-file
+ordering number to the left of the sidebar label as ``"{n}. {title}"``
+(plain integer, no zero-padding, lettered ``21a`` kept as-is, single
+space after the dot; number parsed from the source filename via
+``maintenance.rename.parse_ordered``, display uses the author's source
+number even with gaps, never the global sequence position).
+Unnumbered labs and non-labs keep their plain title; Overview index links
+keep ``Overview``/``Обзор``; group labels unchanged.
 """
 
 from __future__ import annotations
@@ -106,6 +120,48 @@ def lab_subject(slug: str) -> str | None:
     if not is_lab_slug(slug):
         return None
     return slug.strip("/").split("/")[1]
+
+
+def lab_number_prefix(source: str) -> str | None:
+    """Source-file ordering number for SITE-16 (e.g. "1", "21a").
+
+    Parses the numeric prefix from the lesson's source filename via
+    ``maintenance.rename.parse_ordered`` (no divergent regex). Returns
+    the plain integer without zero-padding with any letter kept as-is
+    (``01_`` -> ``"1"``, ``21a_`` -> ``"21a"``), including an optional
+    ``_N`` sub-number when present, or None when the source is
+    unnumbered. Deterministic and locale-independent.
+    """
+    if not source:
+        return None
+    try:
+        from maintenance.rename import parse_ordered
+    except ImportError:  # pragma: no cover - same checkout always has it
+        return None
+    parsed = parse_ordered(source)
+    if parsed is None:
+        return None
+    n1, letter, n2, _rest, _suffix = parsed
+    prefix = str(n1) + (letter or "")
+    if n2 is not None:
+        prefix += f"_{n2}"
+    return prefix
+
+
+def lab_display_label(slug: str, source: str, title: str) -> str:
+    """Display label for SITE-16: numbered labs prefixed, else plain.
+
+    Only lab pages (SITE-11 slugs) whose source filename carries an
+    ordering prefix get ``"{n}. {title}"``; unnumbered labs and all
+    non-lab lessons keep their plain title. Overview index links are
+    handled by the caller (never passed here).
+    """
+    if not is_lab_slug(slug):
+        return title
+    prefix = lab_number_prefix(source)
+    if prefix is None:
+        return title
+    return f"{prefix}. {title}"
 
 
 def get_base(identity) -> str:
@@ -316,11 +372,13 @@ def _all_group_paths(rests: list[str]) -> set[str]:
 
 
 def build_sidebars(nav: list[dict], config) -> dict[str, list]:
-    """Build one sidebar tree per locale (SITE-6..SITE-10).
+    """Build one sidebar tree per locale (SITE-6..SITE-10, SITE-16).
 
     ``nav`` entries need ``slug/title/lang/source/order``. Returns
     ``{lang: [items]}`` where items are link/group dicts (see module
-    docstring). Deterministic; sorted as documented.
+    docstring). Numbered lab lessons carry SITE-16 prefixed labels;
+    Overview index links keep ``Overview``/``Обзор``. Deterministic;
+    sorted as documented.
     """
     langs = [l.code for l in config.languages]
     by_lang: dict[str, list[dict]] = {l: [] for l in langs}
@@ -362,7 +420,13 @@ def _build_one_locale(entries: list[dict], lang: str) -> list:
             # as index, not ordinary. So ordinary rests never equal a
             # group with children except via unelected edge (already
             # separated). Safe to emit as link.
-            items.append({"label": e.get("title", ""), "slug": e["slug"]})
+            # SITE-16: numbered labs prefixed, all others plain; Overview
+            # index links above keep Overview/Обзор with no number.
+            items.append({
+                "label": lab_display_label(
+                    e["slug"], e.get("source", ""), e.get("title", "")),
+                "slug": e["slug"],
+            })
         for label, g in labelled:
             items.append({
                 "label": label,
@@ -467,9 +531,11 @@ def build_starlight_sidebar(per_locale: dict[str, list],
     """Merge per-locale trees into one Starlight sidebar (translations).
 
     Uses the default locale structure as canonical and attaches
-    translations for group labels and index Overview links. Ordinary
-    lesson links use ``{"slug": rest}`` so Starlight renders per-locale
-    titles automatically. Groups are ``collapsed: True`` (SITE-8).
+    translations for group labels, index Overview links and lab lesson
+    links (SITE-16). Lab links use explicit ``{"slug": rest, "label": ...}``
+    so the source-number prefix shows; ordinary non-lab lesson links use
+    ``{"slug": rest}`` so Starlight renders per-locale titles
+    automatically. Groups are ``collapsed: True`` (SITE-8).
     Union: ``ru``-only branches missing from the default locale are
     appended deterministically so no lesson is hidden.
     """
@@ -544,6 +610,18 @@ def build_starlight_sidebar(per_locale: dict[str, list],
                     if trans:
                         item["translations"] = trans
                     result.append(item)
+                elif is_lab_slug(n["slug"]):
+                    # SITE-16: explicit lab labels (numbered prefixed,
+                    # unnumbered plain) with per-locale translations.
+                    item = {"slug": rest, "label": n["label"]}
+                    trans = {}
+                    for lang, tree in zip(others, other_trees):
+                        c = find_link(tree, rest)
+                        if c is not None:
+                            trans[lang] = c.get("label", n["label"])
+                    if trans:
+                        item["translations"] = trans
+                    result.append(item)
                 else:
                     result.append({"slug": rest})
             elif "items" in n:
@@ -572,18 +650,38 @@ def build_starlight_sidebar(per_locale: dict[str, list],
             if "items" in x:
                 collect(x["items"])
     collect(merged)
-    extras: list[str] = []
+    # rest -> {lang: label} for other-locale-only links (SITE-16 needs
+    # explicit lab labels; non-labs keep the historical slug-only shape).
+    extras: dict[str, dict[str, str]] = {}
     for lang in others:
-        def walk(ns):
+        def walk(ns, _lang=lang):
             for x in ns:
                 if "slug" in x:
                     rest = strip_lang(x["slug"])
                     if rest not in have:
-                        extras.append(rest)
                         have.add(rest)
+                        extras.setdefault(rest, {})[_lang] = x.get(
+                            "label", "")
+                    elif rest in extras and _lang not in extras[rest]:
+                        # Same rest appears in several other locales:
+                        # keep each locale's label for translations.
+                        extras[rest][_lang] = x.get("label", "")
                 if "items" in x:
-                    walk(x["items"])
+                    walk(x["items"], _lang)
         walk(per_locale.get(lang, []))
-    for rest in sorted(set(extras)):
-        merged.append({"slug": rest})
+    for rest in sorted(extras):
+        labels = extras[rest]
+        # Lab rest check via a dummy language prefix (SITE-11 shape).
+        if is_lab_slug(f"{default}/{rest}"):
+            # Deterministic label: first other locale in config order.
+            ordered_langs = [l for l in others if l in labels]
+            first_lang = ordered_langs[0] if ordered_langs else sorted(
+                labels)[0]
+            item = {"slug": rest, "label": labels[first_lang]}
+            trans = {l: labels[l] for l in ordered_langs[1:]}
+            if trans:
+                item["translations"] = trans
+            merged.append(item)
+        else:
+            merged.append({"slug": rest})
     return merged

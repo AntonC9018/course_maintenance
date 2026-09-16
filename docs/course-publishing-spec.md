@@ -180,6 +180,7 @@ The implementation language and internal module layout are unconstrained. The co
 - **SITE-13:** Include Pagefind local search and index only existing published lesson routes.
 - **SITE-14:** Do not expose controls or placeholder pages for navigation views or presentations.
 - **SITE-15:** Redirect every indexless sidebar group route `/{lang}/{group...}/` (HTTP/Astro redirect, same mechanism as SITE-3/SITE-4) to the first descendant lesson in that group's sidebar order: direct child lessons before subgroups, numeric order including lettered positions such as `21a` then alphabetical, unelected `index`/`README`/`doc` lessons right after the index link per SITE-7/SITE-9; recurse into the first subgroup when a group has no direct lesson children. Groups with an index lesson keep current behavior (group label from the index title, Overview link, route serves the index lesson) and get no redirect. All existing redirects (`/`, `/en/`, `/ru/`) remain unchanged and still derive from `root_lesson`.
+- **SITE-16:** Prefix numbered lab lesson labels (SITE-11 slugs only) with their source-file ordering number to the left of the title as `"{n}. {title}"` (plain integer without zero-padding, e.g. `01_` displays `1.`, lettered `21a_` displays `21a.`, single space after the dot), where `n` is parsed from the lesson's source filename and `{title}` stays localized; apply the same rule to numbered unelected `index`/`README`/`doc` lab lessons with no special-casing, leave unnumbered lab lessons (e.g. `assessment-1`) and all non-lab lessons with their plain title, keep Overview index links as `Overview`/`Обзор` with no number and group labels unchanged, and emit explicit sidebar labels for lab links (rather than relying on frontmatter titles) plus matching lab prev/next pagination labels; numbers restart per subject group (display the author's source number even with gaps, never the global sequence position); no Starlight badge or custom theme/CSS is used because badges render to the right of the label and the default theme must be kept (SITE-5).
 
 ### Mermaid and static output
 
@@ -228,7 +229,7 @@ Automated fixtures and representative real lessons must cover:
 - inline and display math;
 - both real Mermaid diagrams in the initial corpus;
 - nested `<details>`, tables, raw C++ angle brackets, fenced code, empty lessons, and outlines;
-- locale-prefixed routes, GitHub Pages base paths, root redirect, indexless-group redirects with no synthetic listing pages, sidebar labels/order/collapse, lab pagination, GitHub source links, Pagefind, and absence of fallback routes;
+- locale-prefixed routes, GitHub Pages base paths, root redirect, indexless-group redirects with no synthetic listing pages, sidebar labels/order/collapse, lab-number display (numbered labs prefixed, unnumbered labs and non-labs plain, explicit Starlight lab labels, matching prev/next labels), lab pagination, GitHub source links, Pagefind, and absence of fallback routes;
 - a second identical projection/build that introduces no source changes or newly tracked files.
 
 The initial release is accepted when all requirements above pass locally for a clean checkout, issues #14 and #15 pass their CI/deployment acceptance criteria on GitHub, and the published site is reachable at the inferred Pages URL.

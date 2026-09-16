@@ -930,6 +930,56 @@ class TestRoutesNavCompat(unittest.TestCase):
         self.assertEqual(cpp[-1], "en/cpp/labs/assessment-1")
         self.assertNotIn("en/common/intro", pag)
 
+    def test_lab_number_display_site16(self):
+        # Numbered lab prefixed, unnumbered lab and non-lab plain (SITE-16).
+        def find(items, label):
+            for n in items:
+                if n.get("label") == label and "items" in n:
+                    return n
+                if "items" in n:
+                    r = find(n["items"], label)
+                    if r is not None:
+                        return r
+            return None
+
+        common = next(g for g in self.per_locale["en"]
+                      if g["label"] == "Common Index Title")
+        labs = find([common], "Labs")
+        self.assertIsNotNone(labs)
+        by_slug = {x["slug"]: x["label"] for x in labs["items"]}
+        self.assertEqual(by_slug["en/common/labs/computer-architecture"],
+                         "1. Arch")
+        self.assertEqual(by_slug["en/common/labs/appendix"],
+                         "21a. Appendix")
+        self.assertEqual(by_slug["en/common/labs/notes"], "Notes")
+
+        def find_link(items, rest):
+            for n in items:
+                if n.get("slug") == rest:
+                    return n
+                if "items" in n:
+                    r = find_link(n["items"], rest)
+                    if r is not None:
+                        return r
+            return None
+
+        # Starlight conversion: explicit lab labels, non-labs omitted.
+        lab = find_link(self.starlight_sidebar,
+                        "common/labs/computer-architecture")
+        self.assertIsNotNone(lab)
+        self.assertEqual(lab.get("label"), "1. Arch")
+        nonlab = find_link(self.starlight_sidebar, "common/intro")
+        self.assertIsNotNone(nonlab)
+        self.assertNotIn("label", nonlab)
+        self.assertIn("1. Arch", self.astro_text)
+        # Matching prev/next pagination labels.
+        from publishing.site import augment_projection_files
+        aug = augment_projection_files(
+            self.files, self.nav, self.identity, self.root)
+        notes = aug["src/content/docs/en/common/labs/notes.md"]
+        self.assertIn("21a. Appendix", notes)
+        self.assertIn("1. First", notes)
+
     def test_github_source_links_and_i18n(self):
         from publishing.navigation import (VIEW_ON_GITHUB_LABELS,
                                             github_blob_url)
