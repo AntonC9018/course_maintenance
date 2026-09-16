@@ -30,10 +30,12 @@ per-locale frontmatter title automatically.
 Ordering (SITE-9): direct child lessons reuse projection ``order``
 (numeric incl lettered ``21a`` first, unnumbered alphabetical last).
 Unelected ``index/README/doc`` lessons follow the index link in precedence
-``index > README > doc`` (SITE-7). Subgroups follow lessons, sorted by
-label (fixed/humanized/index-title) for determinism. Top-level subject
-groups use the fixed order Common, C++, DSA; other top-level segments
-follow alphabetically.
+``index > README > doc`` (SITE-7). Subgroups follow lessons: lab-only
+subgroups whose lessons live in numbered source directories (e.g.
+``1_basic/``) sort by that number first (repo order); all other
+subgroups sort by label (fixed/humanized/index-title) for determinism.
+Top-level subject groups use the fixed order Common, C++, DSA; other
+top-level segments follow alphabetically.
 
 Groups (SITE-7/10): a group whose rest path equals an index lesson slug
 uses that lesson title as its label; its lesson appears first as
@@ -42,12 +44,18 @@ uses that lesson title as its label; its lesson appears first as
 ``collapsed: True`` (SITE-8); highlighting/expansion/scroll remain
 Starlight defaults (no custom code).
 
-Labs (SITE-11): ``is_lab_slug`` matches ``/{lang}/{subject}/labs/...``.
-Per-locale lab sequences order Common, C++, DSA subjects; within a lab
-group numbered labs use projection order and unnumbered follow
-alphabetically; ``assessment-1`` is last among C++ labs. Lab pages get
-explicit prev/next; non-lab pages use sidebar-order pagination (no
-frontmatter overrides).
+Labs (SITE-11): ``is_lab_slug`` matches ``/{lang}/{subject}/labs/...``
+(subject first) and ``/{lang}/labs/{section}/...`` (labs first); both
+need at least four segments so bare ``labs`` groups never qualify.
+``lab_subject`` returns the subject/section segment (parts[1] for
+subject-first, the segment right after ``labs`` for labs-first).
+Per-locale lab sequences order Common, C++, DSA subjects; other
+subjects with numbered source dirs (see below) follow in repo order,
+remaining subjects alphabetically; within a lab group numbered labs
+use projection order and unnumbered follow alphabetically;
+``assessment-1`` is last among C++ labs. Lab pages get explicit
+prev/next; non-lab pages use sidebar-order pagination (no frontmatter
+overrides).
 
 Lab numbers (SITE-16): numbered lab lessons display their source-file
 ordering number to the left of the sidebar label as ``"{n}. {title}"``
@@ -111,15 +119,51 @@ def lang_of_slug(slug: str) -> str:
 
 
 def is_lab_slug(slug: str) -> bool:
-    """A lab page matches /{lang}/{subject}/labs/... (SITE-11)."""
+    """A lab page matches ``/{lang}/{subject}/labs/...`` or
+    ``/{lang}/labs/{section}/...`` (SITE-11)."""
     parts = slug.strip("/").split("/")
-    return len(parts) >= 4 and parts[2] == "labs"
+    return len(parts) >= 4 and (parts[2] == "labs" or parts[1] == "labs")
 
 
 def lab_subject(slug: str) -> str | None:
+    """Subject/section segment of a lab slug (SITE-11).
+
+    Subject-first layout returns parts[1]; labs-first layout returns
+    the section right after ``labs`` (parts[2]).
+    """
     if not is_lab_slug(slug):
         return None
-    return slug.strip("/").split("/")[1]
+    parts = slug.strip("/").split("/")
+    if parts[2] == "labs":
+        return parts[1]
+    return parts[2]
+
+
+def _entries_section_number(entries: list[dict]) -> int | None:
+    """Repo-order number shared by lab entries, else None.
+
+    When every entry is a lab page whose source file lives directly in
+    a numbered directory (e.g. ``1_basic/``), return the smallest such
+    number so lab sections follow repo order. Otherwise return None
+    and the caller falls back to alphabetical order (historical
+    behavior for unnumbered layouts such as DSA's ``labs/cpp/``).
+    """
+    try:
+        from maintenance.rename import parse_ordered
+    except ImportError:  # pragma: no cover - same checkout always has it
+        return None
+    numbers = []
+    for e in entries:
+        if not is_lab_slug(e.get("slug", "")):
+            return None
+        parent = e.get("source", "").rpartition("/")[0].rpartition("/")[2]
+        parsed = parse_ordered(parent) if parent else None
+        if parsed is None:
+            return None
+        numbers.append(parsed[0])
+    if not numbers:
+        return None
+    return min(numbers)
 
 
 def lab_number_prefix(source: str) -> str | None:
@@ -343,11 +387,23 @@ def _ordered_children(group_rest: str, rest_to_entry: dict, lang: str,
     sub_paths = sorted(
         g for g in all_groups
         if g and _group_parent(g) == group_rest and g != group_rest)
-    # Order subgroups by label for determinism.
-    labelled = [(group_label(g, rest_to_entry, lang), g)
-                for g in sub_paths]
-    labelled.sort(key=lambda t: (t[0].casefold(), t[1]))
-    return lessons, [g for _label, g in labelled]
+    # Order subgroups: lab-only sections in numbered source dirs follow
+    # repo order first; everything else by label for determinism.
+    numbered: list = []
+    plain: list = []
+    for g in sub_paths:
+        label = group_label(g, rest_to_entry, lang)
+        members = [e for r, e in rest_to_entry.items()
+                   if r == g or r.startswith(g + "/")]
+        num = _entries_section_number(members)
+        if num is None:
+            plain.append((label.casefold(), label, g))
+        else:
+            numbered.append((num, label.casefold(), label, g))
+    numbered.sort()
+    plain.sort()
+    subgroups = [g for _, _, _, g in numbered] + [g for _, _, g in plain]
+    return lessons, subgroups
 
 
 def _group_parent(rest: str) -> str:
@@ -495,9 +551,16 @@ def build_lab_sequences(nav: list[dict]) -> dict[str, list[str]]:
         for subj in LAB_SUBJECT_ORDER:
             members = sorted(by_subject.get(subj, []), key=sort_key)
             seq.extend(m["slug"] for m in members)
+
+        def others_key(s: str):
+            num = _entries_section_number(by_subject[s])
+            if num is None:
+                return (1, 0, s.casefold())
+            return (0, num, s.casefold())
+
         others = sorted(
             (s for s in by_subject if s not in LAB_SUBJECT_ORDER),
-            key=lambda s: s.casefold())
+            key=others_key)
         for subj in others:
             members = sorted(by_subject[subj], key=sort_key)
             seq.extend(m["slug"] for m in members)

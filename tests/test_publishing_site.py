@@ -840,6 +840,74 @@ class TestLabNumberDisplay(unittest.TestCase):
                               "Арх"),
             "1. Арх")
 
+    def test_unit_labs_first_layout(self):
+        from publishing.navigation import (is_lab_slug, lab_display_label,
+                                           lab_subject)
+        self.assertTrue(is_lab_slug("ru/labs/basic/install"))
+        self.assertEqual(lab_subject("ru/labs/basic/install"), "basic")
+        self.assertEqual(
+            lab_display_label("ru/labs/basic/install",
+                              "labs/1_basic/01_install.md",
+                              "Установка .NET"),
+            "1. Установка .NET")
+        self.assertEqual(
+            lab_display_label("ru/labs/design/exam-prep",
+                              "labs/2_design/exam_prep.md",
+                              "Подготовка к экзамену"),
+            "Подготовка к экзамену")
+        # Too short or labs-less slugs are not labs.
+        self.assertFalse(is_lab_slug("ru/labs"))
+        self.assertFalse(is_lab_slug("ru/labs/basic"))
+        self.assertFalse(is_lab_slug("ru/basic/install"))
+        self.assertIsNone(lab_subject("ru/basic/install"))
+        # Subject-first layout unchanged.
+        self.assertTrue(is_lab_slug("ru/cpp/labs/instruction"))
+        self.assertEqual(lab_subject("ru/cpp/labs/instruction"), "cpp")
+
+    def test_sidebar_labs_first_sections_follow_repo_order(self):
+        from types import SimpleNamespace
+        from publishing.navigation import build_sidebars
+        lang = SimpleNamespace(code="ru")
+        config = SimpleNamespace(languages=[lang])
+        nav = [
+            {"slug": "ru/labs/design/field-mask", "title": "Field Mask",
+             "lang": "ru", "source": "labs/2_design/01_field_mask.md",
+             "order": 1},
+            {"slug": "ru/labs/advanced/di-container",
+             "title": "Создание DI контейнера",
+             "lang": "ru", "source": "labs/3_advanced/01_di_container.md",
+             "order": 1},
+            {"slug": "ru/labs/basic/install", "title": "Установка .NET",
+             "lang": "ru", "source": "labs/1_basic/01_install.md",
+             "order": 1},
+        ]
+        sidebar = build_sidebars(nav, config)["ru"]
+        labs = next(
+            g for g in sidebar if g["label"] == "Лабораторные работы")
+        self.assertEqual([g["label"] for g in labs["items"]],
+                         ["Basic", "Design", "Advanced"])
+        basic = labs["items"][0]
+        self.assertEqual(basic["items"][0]["label"], "1. Установка .NET")
+
+    def test_lab_sequences_labs_first_follow_repo_order(self):
+        from publishing.navigation import build_lab_sequences
+        nav = [
+            {"slug": "ru/labs/design/field-mask", "title": "Field Mask",
+             "lang": "ru", "source": "labs/2_design/01_field_mask.md",
+             "order": 1},
+            {"slug": "ru/labs/basic/install", "title": "Установка .NET",
+             "lang": "ru", "source": "labs/1_basic/01_install.md",
+             "order": 1},
+            {"slug": "ru/labs/basic/project", "title": "Проект",
+             "lang": "ru", "source": "labs/1_basic/02_project.md",
+             "order": 2},
+        ]
+        self.assertEqual(build_lab_sequences(nav)["ru"], [
+            "ru/labs/basic/install",
+            "ru/labs/basic/project",
+            "ru/labs/design/field-mask",
+        ])
+
     def test_unit_overview_untouched_and_deterministic(self):
         from publishing.navigation import build_sidebars, lab_display_label
         first = lab_display_label(
