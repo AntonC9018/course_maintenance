@@ -53,6 +53,18 @@ def run_publishing_check(course_repo: Path, args) -> int:
         return 1
 
     try:
+        from .projection import validate_all_h1
+        h1_errors = validate_all_h1(repo, inventory)
+    except Exception as e:  # defensive: still read-only, still nonzero
+        print(f"error: publishing check failed for {repo}: {e}",
+              file=sys.stderr)
+        return 1
+    if h1_errors:
+        for msg in h1_errors:
+            print(f"error: {msg}", file=sys.stderr)
+        return 1
+
+    try:
         from .links import LinkError, validate_all_links
         from .metadata import collect_metadata_state
         final, collect_errors, _missing = collect_metadata_state(

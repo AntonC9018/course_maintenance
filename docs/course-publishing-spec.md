@@ -32,7 +32,7 @@ A course repository supplies:
 - Git history and an `origin` remote from which repository identity, public GitHub URL, and GitHub Pages project URL are inferred; the published branch is always `master`;
 - a repository-owned `course-publishing.json` file;
 - Markdown source documents below configured language roots;
-- committed lesson titles, slugs, and source backlinks.
+- committed lesson slugs and source backlinks (titles derive from H1).
 
 A missing `origin` remote is a validation error with an actionable message. Inference reads only the local `origin` configuration and requires no GitHub CLI or network access.
 
@@ -74,10 +74,16 @@ Every selected lesson has YAML frontmatter containing:
 
 ```yaml
 ---
-title: A concise localized title
 slug: en/cpp/labs/instruction
 ---
 ```
+
+The page title is not stored in source: it is derived from the first
+authored H1 (`# Title`, ATX or Setext `===`) during projection. Every
+lesson must have at least one usable H1 outside fenced code; a lesson
+without one fails validation with PROJ-2. Single-H1 lessons carry no
+`title:` field; only lessons with several H1 sections keep an explicit
+covering `title:` distinct from the first H1.
 
 Immediately after frontmatter, every lesson has one generated block:
 
@@ -148,7 +154,7 @@ The implementation language and internal module layout are unconstrained. The co
 ### Markdown projection
 
 - **PROJ-1:** Remove the marked source-backlink block from projected content.
-- **PROJ-2:** Keep the frontmatter title as the sole website H1 and shift every authored Markdown heading down one level while preserving relative hierarchy.
+- **PROJ-2:** Single-H1 lessons derive the page title from that H1; the H1 is stripped from the projected body so the frontmatter title stays the sole website H1. Lessons with several H1 sections keep an explicit covering frontmatter `title:` distinct from the first H1, and every heading shifts down one level instead. Reject lessons with no usable H1, or several H1s without a distinct covering title, with PROJ-2 instead of guessing.
 - **PROJ-3:** Convert GitHub-friendly inline math `$`code`$` and `$$` display blocks deterministically into the pinned math renderer's accepted input without changing source files.
 - **PROJ-4:** Preserve fenced code, tables, nested `<details>`, raw C++ text protected by code spans, and ordinary Markdown semantics.
 - **PROJ-5:** Inject renderer-only navigation order and presentation metadata; never write renderer metadata into source documents.
@@ -225,7 +231,8 @@ Automated fixtures and representative real lessons must cover:
 - every slug-generation rule and collision class;
 - English and Russian backlink generation;
 - source links to published lessons, excluded Markdown, files, directories, images, peers, fragments, queries, and missing targets;
-- matching, differing, absent, and repeated authored H1 headings;
+- matching, differing (derived from the H1), absent (PROJ-2 error),
+  and repeated authored H1 headings;
 - inline and display math;
 - both real Mermaid diagrams in the initial corpus;
 - nested `<details>`, tables, raw C++ angle brackets, fenced code, empty lessons, and outlines;

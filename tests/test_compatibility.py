@@ -199,16 +199,14 @@ def compat_files():
             "```\n# Not a heading\n$`x`$ untouched\n```\n"
         ),
         "en/guide/05_empty.md":
-            "---\ntitle: Empty\n---\n",
+            "---\ntitle: Empty\n---\n# Empty\n",
         "en/guide/06_outline.md":
-            "---\ntitle: Outline\n---\n- [ ] todo one\n- [ ] todo two\n",
-        # H1 variations.
+            "---\ntitle: Outline\n---\n# Outline\n\n- [ ] todo one\n- [ ] todo two\n",
+        # H1 variations (PROJ-2: title derives from the H1).
         "en/guide/h1_matching.md":
             "---\ntitle: Same\n---\n# Same\n\nBody.\n",
         "en/guide/h1_differing.md":
             "---\ntitle: Title Kept\n---\n# Other Heading\n\nBody.\n",
-        "en/guide/h1_absent.md":
-            "---\ntitle: No H1 Here\n---\nIntro without heading.\n\n## Sec\n",
         "en/guide/h1_repeated.md":
             "---\ntitle: Multi\n---\n# First\n\n# Second\n\n## Third\n",
         "en/assets/code.py": "print(1)\n",
@@ -617,26 +615,40 @@ class TestHeadingsMath(unittest.TestCase):
                    if lines[i].strip() == "---")
         return "\n".join(lines[end + 1:]), full
 
-    def test_matching_h1_shifted_no_duplicate(self):
+    def test_matching_h1_stripped_no_duplicate(self):
         body, full = self._body("en/guide/h1-matching")
         self.assertIn("title: Same", full)
-        self.assertIn("## Same", body)
+        self.assertNotIn("# Same", body)
         for line in body.splitlines():
             self.assertFalse(line.startswith("# "))
 
-    def test_differing_h1_shifted_title_kept(self):
+    def test_differing_h1_derives_title(self):
         body, full = self._body("en/guide/h1-differing")
-        self.assertIn("title: Title Kept", full)
-        self.assertIn("## Other Heading", body)
+        self.assertIn("title: Other Heading", full)
         for line in body.splitlines():
             self.assertFalse(line.startswith("# "))
 
-    def test_absent_h1_shifts_rest(self):
-        body, _f = self._body("en/guide/h1-absent")
-        self.assertIn("### Sec", body)
+    def test_absent_h1_fails(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "c"
+            init_repo_with_origin(root)
+            write_config(root)
+            write(root / "en/labs/common/01_computer_architecture.md",
+                  "---\ntitle: A\n---\n# A\n")
+            write(root / "en/guide/h1_absent.md",
+                  "---\ntitle: No H1 Here\n---\nIntro.\n\n## Sec\n")
+            write(root / "ru/lesson.md", "# R\n")
+            gen = run_publish("metadata", "generate",
+                              "--course-repo", str(root))
+            self.assertEqual(gen.returncode, 0, gen.stdout + gen.stderr)
+            check = run_publish("publishing", "check",
+                                "--course-repo", str(root))
+            self.assertNotEqual(check.returncode, 0)
+            self.assertIn("PROJ-2", check.stdout + check.stderr)
 
-    def test_repeated_h1_all_shifted(self):
-        body, _f = self._body("en/guide/h1-repeated")
+    def test_repeated_h1_shifted_under_covering_title(self):
+        body, full = self._body("en/guide/h1-repeated")
+        self.assertIn("title: Multi", full)
         self.assertIn("## First", body)
         self.assertIn("## Second", body)
         self.assertIn("### Third", body)

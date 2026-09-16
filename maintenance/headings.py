@@ -2,7 +2,11 @@
 
 import re
 
-from .patterns import H1_RE, H3_RE
+from .patterns import FENCE_RE, H1_RE, H3_RE
+
+_H1_ANY_RE = re.compile(r'^\s{0,3}#\s+\S')
+_H1_SETEXT_RE = re.compile(r'^\s{0,3}=+\s*$')
+_ATX_ANY_RE = re.compile(r'^\s{0,3}#{1,6}(?:\s+|$)')
 
 
 def fix_headings_in_text(text: str, h1_number):
@@ -36,6 +40,41 @@ def fix_headings_in_text(text: str, h1_number):
     return ''.join(result), h1_msgs, h3_msgs, h3_counter
 
 
+def has_h1(text: str) -> bool:
+    """True when text has an authored H1 outside fenced code.
+
+    Counts ATX ``# Title`` (exactly one #) or Setext ``===`` under
+    paragraph text. The page title is derived from the H1, so every
+    lesson needs one.
+    """
+    lines = text.splitlines()
+    in_fence = False
+    fenced: list[bool] = []
+    for line in lines:
+        if FENCE_RE.match(line):
+            fenced.append(True)
+            in_fence = not in_fence
+            continue
+        fenced.append(in_fence)
+    prev_text = False
+    for i, line in enumerate(lines):
+        if fenced[i]:
+            prev_text = False
+            continue
+        if _H1_ANY_RE.match(line):
+            return True
+        if _H1_SETEXT_RE.match(line) and prev_text:
+            return True
+        if line.strip() == '' or FENCE_RE.match(line):
+            prev_text = False
+            continue
+        if _ATX_ANY_RE.match(line):
+            prev_text = False
+            continue
+        prev_text = True
+    return False
+
+
 def run_headings(files: list, check_only: bool, quiet: bool):
     """Fix H1/H3 headings. Returns number of files changed."""
     changed = 0
@@ -46,6 +85,12 @@ def run_headings(files: list, check_only: bool, quiet: bool):
         new_text, h1_msgs, h3_msgs, h3_count = fix_headings_in_text(
             original, h1_number)
         if new_text == original:
+            if not has_h1(new_text):
+                changed += 1
+                print(f'MISSING H1 {path.name}  '
+                      f'(expected exactly one `# Title`; '
+                      f'the page title is derived from the H1)')
+                continue
             if not quiet:
                 print(f'OK      {path.name}  '
                       f'(no changes needed, H1={h1_number}, H3 headings={h3_count})')
@@ -53,6 +98,10 @@ def run_headings(files: list, check_only: bool, quiet: bool):
         changed += 1
         for msg in h1_msgs + h3_msgs:
             print(f'  {msg}')
+        if not has_h1(new_text):
+            print(f'MISSING H1 {path.name}  '
+                  f'(expected exactly one `# Title`; '
+                  f'the page title is derived from the H1)')
         if check_only:
             print(f'WOULD-FIX {path.name}  (H1={h1_number}, H3 headings={h3_count})')
         else:

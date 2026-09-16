@@ -1,4 +1,11 @@
-# Lesson title generation prompt
+# Lesson title generation prompt (DEPRECATED)
+
+> Titles are no longer stored in source frontmatter. The page title is
+> derived from each lesson's first authored H1 during projection
+> (PROJ-2); `publishing check` and `maintain.py` fail lessons with no
+> H1. Keep this file for history only: to retitle a lesson, rewrite its
+> H1 (descriptive, no lab number, no ordering prefix). The prompt below
+> was used once to backfill H1s from the old committed titles.
 
 Use the following prompt with a language model when adding explicit titles to an existing course repository. Give each worker a disjoint list of Markdown files.
 

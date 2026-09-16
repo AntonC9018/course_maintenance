@@ -108,41 +108,42 @@ def load_nav(root: Path):
 
 RICH_FILES = {
     # Common labs: numeric incl lettered + unnumbered (SITE-9).
-    "en/labs/common/01_computer_architecture.md": "---\ntitle: Arch\n---\n# A\n",
-    "en/labs/common/02_second.md": "---\ntitle: Second\n---\n# S\n",
-    "en/labs/common/21a_appendix.md": "---\ntitle: Appendix\n---\n# X\n",
-    "en/labs/common/notes.md": "---\ntitle: Notes\n---\n# N\n",
+    # PROJ-2: page titles derive from the H1, so H1s match titles.
+    "en/labs/common/01_computer_architecture.md": "---\ntitle: Arch\n---\n# Arch\n",
+    "en/labs/common/02_second.md": "---\ntitle: Second\n---\n# Second\n",
+    "en/labs/common/21a_appendix.md": "---\ntitle: Appendix\n---\n# Appendix\n",
+    "en/labs/common/notes.md": "---\ntitle: Notes\n---\n# Notes\n",
     # C++ labs incl Assessment 1 (test1 -> assessment-1, last).
-    "en/labs/cpp/01_first.md": "---\ntitle: First\n---\n# F\n",
-    "en/labs/cpp/02_second.md": "---\ntitle: Cpp Second\n---\n# S\n",
-    "en/labs/cpp/test1.md": "---\ntitle: Assessment 1\n---\n# A1\n",
-    "en/labs/cpp/notes.md": "---\ntitle: Zeta\n---\n# Z\n",
+    "en/labs/cpp/01_first.md": "---\ntitle: First\n---\n# First\n",
+    "en/labs/cpp/02_second.md": "---\ntitle: Cpp Second\n---\n# Cpp Second\n",
+    "en/labs/cpp/test1.md": "---\ntitle: Assessment 1\n---\n# Assessment 1\n",
+    "en/labs/cpp/notes.md": "---\ntitle: Zeta\n---\n# Zeta\n",
     # DSA labs.
-    "en/labs/algorithms/01_sorting.md": "---\ntitle: Sorting\n---\n# S\n",
+    "en/labs/algorithms/01_sorting.md": "---\ntitle: Sorting\n---\n# Sorting\n",
     # Common ordinary + index (Common group index).
-    "en/00_intro/index.md": "---\ntitle: Common Index Title\n---\n# C\n",
-    "en/00_intro/01_intro.md": "---\ntitle: Intro\n---\n# I\n",
-    "en/00_intro/02_basics.md": "---\ntitle: Basics\n---\n# B\n",
+    "en/00_intro/index.md": "---\ntitle: Common Index Title\n---\n# Common Index Title\n",
+    "en/00_intro/01_intro.md": "---\ntitle: Intro\n---\n# Intro\n",
+    "en/00_intro/02_basics.md": "---\ntitle: Basics\n---\n# Basics\n",
     # Unelected: guide dir with index (elected) + README + doc.
-    "en/00_intro/guide/index.md": "---\ntitle: Guide Index\n---\n# G\n",
-    "en/00_intro/guide/README.md": "---\ntitle: Guide Readme\n---\n# R\n",
-    "en/00_intro/guide/doc.md": "---\ntitle: Guide Doc\n---\n# D\n",
+    "en/00_intro/guide/index.md": "---\ntitle: Guide Index\n---\n# Guide Index\n",
+    "en/00_intro/guide/README.md": "---\ntitle: Guide Readme\n---\n# Guide Readme\n",
+    "en/00_intro/guide/doc.md": "---\ntitle: Guide Doc\n---\n# Guide Doc\n",
     # Humanize: sub-topic without index/fixed.
-    "en/00_intro/sub-topic/01_foo.md": "---\ntitle: Foo\n---\n# F\n",
+    "en/00_intro/sub-topic/01_foo.md": "---\ntitle: Foo\n---\n# Foo\n",
     # CPP advanced subgroup with index.
     "en/05a_programming_fundamentals/index.md":
-        "---\ntitle: Advanced Index\n---\n# A\n",
+        "---\ntitle: Advanced Index\n---\n# Advanced Index\n",
     "en/05a_programming_fundamentals/01_deep.md":
-        "---\ntitle: Deep\n---\n# D\n",
+        "---\ntitle: Deep\n---\n# Deep\n",
     # CPP ordinary + DSA ordinary (indexless groups).
-    "en/04_cpp/01_intro.md": "---\ntitle: Cpp Intro\n---\n# C\n",
-    "en/08_dsa/01_arrays.md": "---\ntitle: Arrays\n---\n# A\n",
+    "en/04_cpp/01_intro.md": "---\ntitle: Cpp Intro\n---\n# Cpp Intro\n",
+    "en/08_dsa/01_arrays.md": "---\ntitle: Arrays\n---\n# Arrays\n",
     # Russian counterparts (subset: missing some en lessons -> no fallback).
     "ru/labs/common/01_computer_architecture.md":
-        "---\ntitle: Арх\n---\n# А\n",
-    "ru/labs/cpp/test1.md": "---\ntitle: Оценка 1\n---\n# О\n",
-    "ru/00_intro/index.md": "---\ntitle: Общий Индекс\n---\n# О\n",
-    "ru/00_intro/01_intro.md": "---\ntitle: Введ\n---\n# В\n",
+        "---\ntitle: Арх\n---\n# Арх\n",
+    "ru/labs/cpp/test1.md": "---\ntitle: Оценка 1\n---\n# Оценка 1\n",
+    "ru/00_intro/index.md": "---\ntitle: Общий Индекс\n---\n# Общий Индекс\n",
+    "ru/00_intro/01_intro.md": "---\ntitle: Введ\n---\n# Введ\n",
 }
 
 

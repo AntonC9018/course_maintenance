@@ -55,7 +55,7 @@ class TestPipeline(unittest.TestCase):
         # and stale anchor. One run must fix the move and the anchor,
         # which proves the link index sees post-rename/post-heading state.
         d = make_lab(self.root, "lab", {
-            "01_a.md": "see [B](03_b.md#9-install)\n",
+            "01_a.md": "# 1. A\nsee [B](03_b.md#9-install)\n",
             "03_b.md": "# 9. B\n### 9. Install\n",
         })
         # --root points at the temp repo so move lookup searches it

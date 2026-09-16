@@ -19,8 +19,15 @@ This document captures the agreed initial design for publishing course repositor
 - Each course repository initially uses a `course-publishing.json` content configuration that selects language content roots and may explicitly include or exclude Markdown source documents. The configuration does not enumerate every lesson individually. The format is provisional and may be replaced when the implementation is restructured.
 - Site and repository identity are initially inferred from repository context rather than required as configuration.
 - The initial data-structures-and-algorithms configuration publishes all Markdown under `en` and `ru` except supporting README files in `linker_examples`, `snake/raylib-example`, `vector`, `waves_algorithm`, `waves_algorithm/minecraft`, and `sorting/examples`, plus `ru/labs/cpp/README.md`. Outline and stub lessons remain published.
-- Each published lesson stores an explicit `title` and stable, nested `slug` in YAML frontmatter.
-- Starlight renders the frontmatter title as the sole website H1. The projection shifts every authored Markdown heading down one level, preserving its text and relative hierarchy, so documents with existing H1 headings do not gain duplicate page-level headings.
+- Each published lesson stores a stable, nested `slug` in YAML frontmatter.
+  The page title is derived from the lesson's first authored H1 during
+  projection and injected as renderer-only frontmatter; sources carry no
+  `title:` field.
+- Starlight renders the derived frontmatter title as the sole website H1.
+  Single-H1 lessons strip the source H1 the title was derived from;
+  lessons with several H1 sections keep an explicit covering title and
+  shift every heading down one level instead, so documents never gain
+  duplicate page-level headings.
 - Each source document contains a source-only backlink labelled `This lesson on the website`. Russian documents use a natural Russian equivalent.
 - The backlink is enclosed in reserved markers so the web projection can omit it.
 - The build creates an ephemeral, slug-shaped Markdown tree for Starlight. Generated projections are never committed.

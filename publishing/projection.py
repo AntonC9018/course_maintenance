@@ -9,10 +9,14 @@ Pipeline per lesson (deterministic, sorted):
 1. PROJ-1: remove the marked source-backlink block (fence-aware).
 2. LINK-2..6: rewrite links via :func:`publishing.links.rewrite_document`
    (canonical/blob/tree, images marked for copying).
-3. PROJ-2: keep frontmatter title as sole H1; shift every authored ATX
-   heading down one level (``#`` -> ``##``, capped at ``######``) and
-   convert Setext ``===`` -> ``##`` / ``---`` -> ``###``. Fenced code
-   untouched. After the shift no ``# `` remains, so no duplicate H1.
+3. PROJ-2: single-H1 lessons derive the page title from that H1; the
+   H1 is stripped from the body and any remaining H1s are demoted to
+   ``##``. Multi-H1 lessons keep an explicit covering frontmatter
+   ``title:`` (distinct from the first H1) and shift every heading down
+   one level instead. Fenced code untouched. The resolved title is
+   injected as frontmatter ``title:`` in the projection only. A lesson
+   with no H1, or several H1s without a distinct covering title, fails
+   with PROJ-2 rather than guessed.
 4. PROJ-3: convert GitHub-friendly inline math ``$`code`$`` into the
    pinned renderer input ``$code$`` (Starlight remark-math / rehype-katex,
    versions pinned in #12). Display ``$$`` blocks are already valid
@@ -70,6 +74,242 @@ _TITLE_RE = re.compile(r'^\s*title\s*:\s*(.*)\s*$')
 _SIDEBAR_RE = re.compile(r'^\s*sidebar\s*:\s*(.*)\s*$')
 _ORDER_RE = re.compile(r'^\s*order\s*:\s*(.*)\s*$')
 _CODE_SPAN_RE = re.compile(r'`[^`]*`')
+_H1_ATX_RE = re.compile(r'^\s{0,3}#\s+(.*\S)\s*$')
+_H1_SETEXT_RE = re.compile(r'^\s{0,3}=+\s*$')
+_NUMBER_PREFIX_RE = re.compile(r'^\d+[a-zA-Z]?\.\s+')
+_MD_LINK_RE = re.compile(r'\[([^\]]*)\]\([^)]*\)')
+_MD_IMG_RE = re.compile(r'!\[([^\]]*)\]\([^)]*\)')
+
+
+def _strip_inline_md(text: str) -> str:
+    """Plain-text title from authored H1 inline Markdown.
+
+    Strips code spans (keeping inner text), emphasis/strong/strike
+    markers, images/links (keeping label text) and HTML tags, then
+    collapses whitespace. Deterministic, stdlib-only.
+    """
+    s = text
+    s = _MD_IMG_RE.sub(r'\1', s)
+    s = _MD_LINK_RE.sub(r'\1', s)
+    # code spans: `x` -> x (also ``x`` defensively, though H1s use single)
+    s = re.sub(r'``([^`]*)``', r'\1', s)
+    s = re.sub(r'`([^`]*)`', r'\1', s)
+    s = s.replace('**', '').replace('__', '')
+    s = re.sub(r'(?<!\w)\*(?!\s)', '', s)
+    s = re.sub(r'(?<!\s)\*(?!\w)', '', s)
+    s = s.replace('~~', '')
+    s = re.sub(r'<[^>]*>', '', s)
+    s = re.sub(r'\s+', ' ', s)
+    return s.strip()
+
+
+def _fence_state(lines: list[str]) -> list[bool]:
+    """Per-line inside-fence flags (fence delimiter lines are True)."""
+    state: list[bool] = []
+    in_fence = False
+    for line in lines:
+        if FENCE_RE.match(line):
+            state.append(True)
+            in_fence = not in_fence
+            continue
+        state.append(in_fence)
+    return state
+
+
+def _normalize_h1_text(raw: str) -> str:
+    """Plain-text title from raw H1 text (number + inline markup stripped)."""
+    title = _NUMBER_PREFIX_RE.sub('', (raw or '').strip())
+    return _strip_inline_md(title)
+
+
+def extract_all_h1(body_lines: list[str]):
+    """All authored H1s outside fenced code, in document order.
+
+    Returns a list of (line_idx, underline_idx|None, raw_text).
+    ATX ``# Title`` and Setext (text + ``===`` underline) both count.
+    """
+    fenced = _fence_state(body_lines)
+    found: list = []
+    prev_text_idx: int | None = None
+    for i, line in enumerate(body_lines):
+        if fenced[i]:
+            prev_text_idx = None
+            continue
+        m = _H1_ATX_RE.match(line)
+        # ``## x`` cannot match: regex needs exactly one # + whitespace.
+        if m:
+            found.append((i, None, (m.group(1) if m.group(1) else '')))
+            prev_text_idx = None
+            continue
+        if _H1_SETEXT_RE.match(line) and prev_text_idx is not None:
+            found.append(
+                (prev_text_idx, i, body_lines[prev_text_idx].strip()))
+            prev_text_idx = None
+            continue
+        if line.strip() == '' or FENCE_RE.match(line):
+            prev_text_idx = None
+            continue
+        if _ATX_RE.match(line):
+            prev_text_idx = None
+            continue
+        prev_text_idx = i
+    return found
+
+
+def extract_first_h1(body_lines: list[str]):
+    """Find first authored H1 outside fenced code.
+
+    Returns (line_idx, underline_idx|None, raw_text) or (None, None, None).
+    ATX ``# Title`` and Setext (text + ``===`` underline) both count.
+    """
+    found = extract_all_h1(body_lines)
+    if not found:
+        return None, None, None
+    return found[0]
+
+
+def _strip_first_h1(body_lines: list[str], first) -> list[str]:
+    """Remove the title H1; demote any remaining H1s to ``##``.
+
+    ``##``-``######`` pass through untouched; fenced code untouched.
+    """
+    idx, under, _raw = first
+    fenced = _fence_state(body_lines)
+    remove = {idx}
+    if under is not None:
+        remove.add(under)
+    out: list[str] = []
+    for i, line in enumerate(body_lines):
+        if i in remove:
+            continue
+        if fenced[i]:
+            out.append(line)
+            continue
+        m = _H1_ATX_RE.match(line)
+        if m:
+            rest = (m.group(1) or '').strip()
+            out.append(f"## {rest}")
+            continue
+        if _H1_SETEXT_RE.match(line):
+            # A remaining === underline: previous output line is its text
+            # (it cannot be the stripped title: that pair was removed).
+            if out and out[-1].strip() != '' \
+                    and not _ATX_RE.match(out[-1]) \
+                    and not FENCE_RE.match(out[-1]):
+                out[-1] = f"## {out[-1].strip()}"
+                continue
+            continue
+        out.append(line)
+    return out
+
+
+def resolve_title_and_body(body_lines: list[str], fm_title: str | None):
+    """Resolve the page title and projected body (PROJ-2).
+
+    - No H1: ``[PROJ-2]`` missing-H1 error.
+    - Exactly one H1: the title derives from it; it is stripped from the
+      body and any frontmatter title is ignored (sources carry none).
+    - Two or more H1s: the lesson needs an explicit frontmatter title
+      that differs from the first H1 (a covering title); every heading
+      is then shifted down one level (previous behavior) and the
+      frontmatter title is kept.
+
+    Returns (title, new_body, error); error carries no source path.
+    """
+    found = extract_all_h1(body_lines)
+    if not found:
+        return None, None, (
+            "[PROJ-2] missing H1 heading (expected `# Title` as the "
+            "first heading; the page title is derived from the H1)")
+    if len(found) == 1:
+        title = _normalize_h1_text(found[0][2])
+        if not title:
+            return None, None, (
+                "[PROJ-2] empty H1 heading (the page title is derived from "
+                "the H1; give it non-empty text)")
+        return title, _strip_first_h1(body_lines, found[0]), None
+    if fm_title is None or fm_title.strip() == '':
+        return None, None, (
+            f"[PROJ-2] {len(found)} H1 headings but no frontmatter title "
+            "(lessons with several H1 sections need an explicit covering "
+            "`title:` distinct from the first H1; single-H1 lessons "
+            "derive it instead)")
+    first = _normalize_h1_text(found[0][2])
+    if first and fm_title.strip().casefold() == first.casefold():
+        return None, None, (
+            "[PROJ-2] frontmatter title duplicates the first H1 while "
+            "other H1 sections remain (give a distinct covering `title:` "
+            "or demote the extra H1s to `##`)")
+    return fm_title, shift_headings_body(body_lines), None
+
+
+def derive_title_and_strip_body(body_lines: list[str]):
+    """Derive page title from first H1; strip it; demote other H1s.
+
+    Single-H1 fast path of :func:`resolve_title_and_body` (no frontmatter
+    title consulted). Kept for backward-compatible imports and unit tests.
+    Returns (title, new_body, error) without source path.
+    """
+    return resolve_title_and_body(body_lines, None)
+
+
+def set_title_in_frontmatter(fm_lines: list[str], title: str) -> list[str]:
+    """Set top-level ``title:`` in frontmatter (replace or insert)."""
+    needs_quote = (
+        not title
+        or title.strip() != title
+        or title.startswith(('#', '"', "'", '!', '&', '*', '-', '?',
+                              '|', '>', '@', '`', '%', '{', '['))
+        or ': ' in title
+        or title.endswith(':')
+        or '\n' in title
+    )
+    if needs_quote:
+        escaped = title.replace('\\', '\\\\').replace('"', '\\"')
+        value = f'"{escaped}"'
+    else:
+        value = title
+    out = list(fm_lines)
+    if len(out) >= 2 and out[0].strip() == '---' \
+            and out[-1].strip() == '---':
+        for i in range(1, len(out) - 1):
+            if _TITLE_RE.match(out[i]):
+                out[i] = f'title: {value}'
+                return out
+        out.insert(len(out) - 1, f'title: {value}')
+        return out
+    return ['---', f'title: {value}', '---']
+
+
+def validate_all_h1(course_repo, inventory) -> list[str]:
+    """Read-only H1/title check for `publishing check` (PROJ-2).
+
+    Single-H1 lessons derive the page title from the H1. Multi-H1
+    lessons need an explicit covering frontmatter title distinct from
+    the first H1. Returns sorted diagnostics with source path + rule +
+    corrective operation.
+    """
+    from .metadata import split_frontmatter as _split
+
+    errors: list[str] = []
+    for lesson in sorted(inventory.lessons, key=lambda le: le.repo_rel):
+        try:
+            text = lesson.source_path.read_text(encoding='utf-8')
+        except OSError as exc:
+            errors.append(
+                f"{lesson.repo_rel}: [PROJ-2] cannot read lesson ({exc}); "
+                f"{_FIX_PROJECTION}")
+            continue
+        _has_fm, _end, fm, rest, _all = _split(text)
+        stripped = strip_backlink_lines(rest)
+        fm_title = parse_title_value(fm) if _has_fm else None
+        _t, _b, err = resolve_title_and_body(stripped, fm_title)
+        if err is not None:
+            errors.append(
+                f"{lesson.repo_rel}: {err}; fix: single-H1 lessons add "
+                f"`# Title` as the first heading, multi-H1 lessons add "
+                f"a distinct covering `title:`; {_FIX_PROJECTION}")
+    return sorted(errors)
 
 
 class ProjectionError(Exception):
@@ -127,6 +367,10 @@ def strip_backlink_lines(body_lines: list[str]) -> list[str]:
 
 def shift_headings_body(body_lines: list[str]) -> list[str]:
     """Shift every authored heading down one level (fence-aware).
+
+    Used by PROJ-2 for multi-H1 lessons with an explicit covering
+    frontmatter title: the title stays the sole page H1 and every
+    authored heading moves down one level so nothing duplicates it.
 
     ATX ``#`` -> ``##`` ... ``#####`` -> ``######``, ``######`` stays.
     Setext ``===`` (H1) -> ``## text``, ``---`` (H2, only when the
@@ -474,8 +718,17 @@ def collect_projection_data(course_repo: Path, config, identity,
         if link_errors:
             continue
         has_fm2, _e2, fm2, rest2, _a2 = split_frontmatter(rewritten)
-        shifted = shift_headings_body(rest2)
-        converted, math_errors = convert_math_body(shifted)
+        # PROJ-2: single H1 derives the title and is stripped so the
+        # frontmatter title stays the sole page H1 (no duplicate heading).
+        # Multi-H1 lessons keep an explicit covering frontmatter title
+        # and shift every heading down one level (previous behavior).
+        fm_title = parse_title_value(fm2) if has_fm2 else None
+        title_resolved, destripped, h1_err = resolve_title_and_body(
+            rest2, fm_title)
+        if h1_err is not None:
+            errors.append(f"{rel}: {h1_err}; {_FIX_PROJECTION}")
+            continue
+        converted, math_errors = convert_math_body(destripped)
         for e in math_errors:
             errors.append(f"{rel}: {e}; {_FIX_PROJECTION}")
         if math_errors:
@@ -497,11 +750,11 @@ def collect_projection_data(course_repo: Path, config, identity,
         order = orders.get(rel, 1)
         if has_fm2:
             fm3 = inject_order(fm2, order)
-            title = parse_title_value(fm3)
         else:
-            title = None
             fm3 = ['---', f'slug: {slug}', 'sidebar:',
                    f'  order: {order}', '---']
+        fm3 = set_title_in_frontmatter(fm3, title_resolved)
+        title = title_resolved
         if converted:
             projected = ('\n'.join(fm3) + '\n'
                          + '\n'.join(converted).rstrip('\n') + '\n')
@@ -516,7 +769,7 @@ def collect_projection_data(course_repo: Path, config, identity,
                 copy_rel_by_src[key] = copy_rel
         nav.append({
             'slug': slug,
-            'title': title if title is not None else '',
+            'title': title,
             'lang': lesson.language,
             'source': rel,
             'order': order,

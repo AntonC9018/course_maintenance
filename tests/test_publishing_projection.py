@@ -177,7 +177,7 @@ class TestHeadingShift(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def _project_body(self, source_body: str, title="T") -> str:
+    def _project_full(self, source_body: str, title="T") -> str:
         make_repo(self.root, {
             "en/labs/common/01_computer_architecture.md": (
                 f"---\ntitle: {title}\n---\n{source_body}"),
@@ -185,66 +185,145 @@ class TestHeadingShift(unittest.TestCase):
         })
         proc = run_projection(self.root, self.out)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        full = read_projected(self.out, "en/common/labs/computer-architecture")
-        # split off frontmatter
+        return read_projected(
+            self.out, "en/common/labs/computer-architecture")
+
+    def _split_body(self, full: str) -> str:
         lines = full.splitlines()
         self.assertEqual(lines[0].strip(), "---")
         end = next(i for i in range(1, len(lines))
                    if lines[i].strip() == "---")
         return "\n".join(lines[end + 1:])
 
-    def test_proj2_matching_h1_shifted_no_duplicate_h1(self):
-        body = self._project_body("# T\n\n## Sub\n", title="T")
-        self.assertNotIn("\n# T", "\n" + body)
-        self.assertIn("## T", body)
-        self.assertIn("### Sub", body)
+    def _project_body(self, source_body: str, title="T") -> str:
+        return self._split_body(self._project_full(source_body, title))
+
+    def test_proj2_matching_h1_stripped_no_duplicate_h1(self):
+        # PROJ-2: title derived from H1; the H1 is stripped so the
+        # frontmatter title stays the sole page H1 (no duplicate).
+        full = self._project_full("# T\n\n## Sub\n", title="T")
+        body = self._split_body(full)
+        self.assertIn("title: T", full)
+        self.assertNotIn("# T", body)
+        self.assertIn("## Sub", body)
         # no H1 remains in projected body
         for line in body.splitlines():
             self.assertFalse(line.startswith("# "),
                              f"duplicate H1 left: {line!r}")
 
-    def test_proj2_differing_h1_shifted(self):
-        body = self._project_body("# Other\n\nText\n", title="T")
-        self.assertIn("## Other", body)
+    def test_proj2_h1_derives_title_overwriting_frontmatter(self):
+        full = self._project_full("# Other\n\nText\n", title="T")
+        body = self._split_body(full)
+        self.assertIn("title: Other", full)
+        self.assertNotIn("Other Heading", body)
         for line in body.splitlines():
             self.assertFalse(line.startswith("# "))
 
-    def test_proj2_absent_h1_shifts_rest(self):
-        body = self._project_body("Intro\n\n## Sec\n\n### Deep\n",
-                                  title="T")
-        self.assertIn("### Sec", body)
-        self.assertIn("#### Deep", body)
+    def test_proj2_absent_h1_fails(self):
+        # No H1 anywhere: publishing check (via make_repo) and the
+        # projection build must both fail with PROJ-2.
+        with tempfile.TemporaryDirectory() as td:
+            from tests.test_publishing_projection import (
+                init_repo_with_origin, write_config)
+            root = Path(td) / "c"
+            init_repo_with_origin(root)
+            write_config(root)
+            write = __import__("tests.helpers", fromlist=["write"]).write
+            write(root / "en/labs/common/01_computer_architecture.md",
+                  "---\ntitle: T\n---\nIntro\n\n## Sec\n")
+            write(root / "ru/lesson.md", "---\ntitle: R\n---\n# R\n")
+            from tests.helpers import run_publish
+            gen = run_publish("metadata", "generate",
+                              "--course-repo", str(root))
+            self.assertEqual(gen.returncode, 0, gen.stdout + gen.stderr)
+            out = Path(td) / "out"
+            proc = run_publish("projection", "build",
+                               "--course-repo", str(root),
+                               "--out", str(out))
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("PROJ-2", proc.stdout + proc.stderr)
 
-    def test_proj2_repeated_h1_all_shifted(self):
-        body = self._project_body("# A\n\n# B\n\n## C\n", title="T")
+    def test_proj2_repeated_h1_shifted_under_covering_title(self):
+        # Multi-H1 lesson with a distinct covering frontmatter title:
+        # title kept, every heading shifted down one level.
+        full = self._project_full("# A\n\n# B\n\n## C\n", title="T")
+        body = self._split_body(full)
+        self.assertIn("title: T", full)
         self.assertIn("## A", body)
         self.assertIn("## B", body)
         self.assertIn("### C", body)
         for line in body.splitlines():
             self.assertFalse(line.startswith("# "))
 
-    def test_proj2_frontmatter_title_kept_as_sole_h1(self):
+    def test_proj2_repeated_h1_without_title_fails(self):
+        from tests.helpers import run_publish, write
+        from tests.test_publishing_projection import (
+            init_repo_with_origin, write_config)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "c"
+            init_repo_with_origin(root)
+            write_config(root)
+            write(root / "en/labs/common/01_computer_architecture.md",
+                  "# A\n\n# B\n")
+            write(root / "ru/lesson.md", "# R\n")
+            gen = run_publish("metadata", "generate",
+                              "--course-repo", str(root))
+            self.assertEqual(gen.returncode, 0, gen.stdout + gen.stderr)
+            out = Path(td) / "out-multi"
+            proc = run_publish("projection", "build",
+                               "--course-repo", str(root),
+                               "--out", str(out))
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("PROJ-2", proc.stdout + proc.stderr)
+
+    def test_proj2_repeated_h1_title_matching_first_fails(self):
+        from tests.helpers import run_publish, write
+        from tests.test_publishing_projection import (
+            init_repo_with_origin, write_config)
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "c"
+            init_repo_with_origin(root)
+            write_config(root)
+            write(root / "en/labs/common/01_computer_architecture.md",
+                  "---\ntitle: A\n---\n# A\n\n# B\n")
+            write(root / "ru/lesson.md", "---\ntitle: R\n---\n# R\n")
+            gen = run_publish("metadata", "generate",
+                              "--course-repo", str(root))
+            self.assertEqual(gen.returncode, 0, gen.stdout + gen.stderr)
+            out = Path(td) / "out-dup"
+            proc = run_publish("projection", "build",
+                               "--course-repo", str(root),
+                               "--out", str(out))
+            self.assertNotEqual(proc.returncode, 0)
+            self.assertIn("PROJ-2", proc.stdout + proc.stderr)
+
+    def test_proj2_no_title_in_source_derived_from_h1(self):
         make_repo(self.root, {
             "en/labs/common/01_computer_architecture.md": (
-                "---\ntitle: Kept Title\n---\n# Other\n"),
-            "ru/lesson.md": "---\ntitle: R\n---\n# R\n",
+                "# Derived Title\n\n## Sec\n"),
+            "ru/lesson.md": "# R\n",
         })
         proc = run_projection(self.root, self.out)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         full = read_projected(self.out, "en/common/labs/computer-architecture")
-        self.assertIn("title: Kept Title", full)
-        # sole H1 is frontmatter title (no '# ' headings in body)
-        lines = full.splitlines()
-        end = next(i for i in range(1, len(lines))
-                   if lines[i].strip() == "---")
-        body = "\n".join(lines[end + 1:])
+        self.assertIn("title: Derived Title", full)
+        body = self._split_body(full)
+        self.assertIn("## Sec", body)
+        for line in body.splitlines():
+            self.assertFalse(line.startswith("# "))
+
+    def test_proj2_frontmatter_title_overwritten_by_h1(self):
+        full = self._project_full("# Other\n", title="Kept Title")
+        self.assertIn("title: Other", full)
+        body = self._split_body(full)
         for line in body.splitlines():
             self.assertFalse(line.startswith("# "))
 
     def test_proj2_fenced_headings_untouched(self):
-        body = self._project_body("# Real\n\n```\n# Not heading\n```\n",
+        full = self._project_full("# Real\n\n```\n# Not heading\n```\n",
                                   title="T")
-        self.assertIn("## Real", body)
+        body = self._split_body(full)
+        self.assertIn("title: Real", full)
         self.assertIn("# Not heading", body)
 
 
@@ -258,9 +337,11 @@ class TestMathConversion(unittest.TestCase):
         self.tmp.cleanup()
 
     def _project(self, source_body: str):
+        # PROJ-2 requires an H1 (title derived from it); fixtures carry
+        # one so math behaviour is tested in isolation.
         make_repo(self.root, {
             "en/labs/common/01_computer_architecture.md": (
-                f"---\ntitle: T\n---\n{source_body}"),
+                f"---\ntitle: T\n---\n# T\n\n{source_body}"),
             "ru/lesson.md": "---\ntitle: R\n---\n# R\n",
         })
         return run_projection(self.root, self.out)
@@ -344,11 +425,13 @@ class TestPreservation(unittest.TestCase):
         self.assertIn("`a < b`", text)
 
     def test_proj4_empty_and_outline_survive(self):
+        # PROJ-2 requires an H1 (title derived from it); the minimal
+        # lesson is title + H1, outlines carry H1 plus checklist body.
         make_repo(self.root, {
             "en/labs/common/01_computer_architecture.md":
-                "---\ntitle: T\n---\n",
+                "---\ntitle: T\n---\n# T\n",
             "en/guide/01_outline.md":
-                "---\ntitle: O\n---\n- [ ] todo\n",
+                "---\ntitle: O\n---\n# O\n\n- [ ] todo\n",
             "ru/lesson.md": "---\ntitle: R\n---\n# R\n",
         })
         proc = run_projection(self.root, self.out)
