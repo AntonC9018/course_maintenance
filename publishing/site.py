@@ -1,4 +1,4 @@
-"""Static site build via the pinned Astro Starlight renderer (SITE-1..14 + DIAG).
+"""Static site build via the pinned Astro Starlight renderer (SITE-1..15 + DIAG).
 
 Orchestration for ``publish.py site build`` (issues #11 Mermaid excluded,
 #12 Mermaid + compatibility). Stdlib-only Python; the Node toolchain is
@@ -35,9 +35,12 @@ Pipeline (after shared validation identical to ``projection build``):
    inspected for forbidden Mermaid client JS (DIAG-3).
 
 No fallback lesson files are ever generated (SITE-3); locale roots have
-no starter pages (only Astro ``redirects``). No views/presentation
-controls or placeholders are emitted (SITE-14). No Mermaid client JS is
-shipped and no SVGs are committed (DIAG-3).
+no starter pages (only Astro ``redirects``). Indexless sidebar groups get
+no listing pages either (SITE-10); their routes are Astro ``redirects``
+to the first descendant lesson (SITE-15), which Astro materializes as
+redirect pages in ``dist/`` exactly as for the ``/en/`` root redirect.
+No views/presentation controls or placeholders are emitted (SITE-14).
+No Mermaid client JS is shipped and no SVGs are committed (DIAG-3).
 """
 
 from __future__ import annotations
@@ -460,7 +463,8 @@ def run_site_build(course_repo: Path, args) -> int:
     from .links import build_link_index, validate_all_links
     from .metadata import collect_metadata_state, validate_all_metadata
     from .navigation import (build_lab_sequences, build_sidebars,
-                             build_starlight_sidebar, get_redirects)
+                             build_starlight_sidebar, get_group_redirects,
+                             get_redirects)
     from .projection import (_clean_out_dir, collect_projection_data,
                              validate_out_location)
 
@@ -536,6 +540,11 @@ def run_site_build(course_repo: Path, args) -> int:
     lab_sequences = build_lab_sequences(nav)
     starlight_sidebar = build_starlight_sidebar(per_locale, config)
     redirects = get_redirects(config, final)
+    # SITE-15: indexless sidebar groups redirect to their first
+    # descendant lesson (same Astro redirect mechanism as SITE-3/4;
+    # no listing pages emitted). Keys are disjoint from the root and
+    # locale roots above by construction.
+    redirects.update(get_group_redirects(nav, config))
     if check_mode:
         n = sum(1 for k in files if k.startswith("src/content/docs/"))
         print(f"site check: OK ({n} lesson(s); "

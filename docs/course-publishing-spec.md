@@ -174,11 +174,12 @@ The implementation language and internal module layout are unconstrained. The co
 - **SITE-7:** A group with an index lesson uses that lesson's title as the group label and the localized fixed index-link label from SITE-6 for the lesson itself. Place any unelected `index.md`, `README.md`, or `doc.md` lessons immediately after the index link, in that precedence order, as ordinary lessons. For any other group label without a fixed label or index lesson, humanize its route segment by replacing each hyphen with a space and uppercasing the first cased character without otherwise changing it; for example, `advanced-programming-fundamentals` becomes `Advanced programming fundamentals`.
 - **SITE-8:** Keep groups collapsed by default and retain Starlight's default current-page highlighting, ancestor expansion, and scroll persistence without custom reordering or scrolling.
 - **SITE-9:** Sort numbered siblings numerically, including lettered positions such as `21a`; sort unnumbered siblings alphabetically.
-- **SITE-10:** Leave groups without index lessons non-clickable and do not create synthetic listing lessons.
+- **SITE-10:** Leave groups without index lessons non-clickable and do not create synthetic listing lessons. This does not forbid SITE-15 redirects: a redirect is not a listing page and generates no lesson content.
 - **SITE-11:** A lab page is a lesson whose canonical slug matches `/{lang}/{subject}/labs/...`. Give lab pages explicit previous and next links within one sequence per locale: Common labs, C++ labs, then data-structures-and-algorithms labs. Within a lab group, insert numbered labs by numeric source order and place unnumbered labs afterward alphabetically; place Assessment 1 last among C++ labs. Give non-lab pages ordinary sidebar-order pagination.
 - **SITE-12:** Add a localized `View on GitHub` footer link to the normal rendered source-document page, not the edit form, raw response, or projection.
 - **SITE-13:** Include Pagefind local search and index only existing published lesson routes.
 - **SITE-14:** Do not expose controls or placeholder pages for navigation views or presentations.
+- **SITE-15:** Redirect every indexless sidebar group route `/{lang}/{group...}/` (HTTP/Astro redirect, same mechanism as SITE-3/SITE-4) to the first descendant lesson in that group's sidebar order: direct child lessons before subgroups, numeric order including lettered positions such as `21a` then alphabetical, unelected `index`/`README`/`doc` lessons right after the index link per SITE-7/SITE-9; recurse into the first subgroup when a group has no direct lesson children. Groups with an index lesson keep current behavior (group label from the index title, Overview link, route serves the index lesson) and get no redirect. All existing redirects (`/`, `/en/`, `/ru/`) remain unchanged and still derive from `root_lesson`.
 
 ### Mermaid and static output
 
@@ -199,7 +200,7 @@ The implementation language and internal module layout are unconstrained. The co
 - **CI-8:** Third-party actions are pinned to immutable commit revisions. Build caches are keyed by the relevant pinned runtime, browser, and dependency-lock revisions and never cache source metadata, projections, or deployable output as authoritative results.
 - **CI-9:** Pull-request validation has only `contents: read`. Pages write and identity-token permissions are confined to the deployment job for a successful `master` build.
 - **CI-10:** Validation and deployment use concurrency controls that discard superseded work and ensure an older run cannot become the final deployment after a newer `master` revision. Failed validation does not deploy, so the previously published site remains live; the initial release does not perform automatic rollback.
-- **CI-11:** After deployment, bounded-retry smoke tests verify the root redirect, representative English and Russian routes, search, static Mermaid output, and a copied asset at the public Pages URL.
+- **CI-11:** After deployment, bounded-retry smoke tests verify the root redirect, representative English and Russian routes, representative indexless group redirects (e.g. `/en/cpp/`, `/en/cpp/labs/`, `/ru/cpp/`, `/ru/cpp/labs/`), search, static Mermaid output, and a copied asset at the public Pages URL. The group-redirect checks also assert that no synthetic listing HTML is generated for those routes (redirect pages only).
 - **CI-12:** The repository uses GitHub Actions as its Pages source and makes the validation status required for ordinary pull-request merges. It does not require changes to arrive through pull requests, and repository administrators retain the default protection bypass so direct `master` commits remain possible.
 
 ## Data-structures-and-algorithms rollout
@@ -227,7 +228,7 @@ Automated fixtures and representative real lessons must cover:
 - inline and display math;
 - both real Mermaid diagrams in the initial corpus;
 - nested `<details>`, tables, raw C++ angle brackets, fenced code, empty lessons, and outlines;
-- locale-prefixed routes, GitHub Pages base paths, root redirect, sidebar labels/order/collapse, lab pagination, GitHub source links, Pagefind, and absence of fallback routes;
+- locale-prefixed routes, GitHub Pages base paths, root redirect, indexless-group redirects with no synthetic listing pages, sidebar labels/order/collapse, lab pagination, GitHub source links, Pagefind, and absence of fallback routes;
 - a second identical projection/build that introduces no source changes or newly tracked files.
 
 The initial release is accepted when all requirements above pass locally for a clean checkout, issues #14 and #15 pass their CI/deployment acceptance criteria on GitHub, and the published site is reachable at the inferred Pages URL.

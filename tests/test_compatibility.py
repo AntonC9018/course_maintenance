@@ -13,9 +13,10 @@ list end-to-end with fixtures + representative real lessons:
 - inline/display math (PROJ-3);
 - both real Mermaid diagrams in the initial corpus (DIAG-1..4);
 - nested details/tables/raw C++/fenced/empty/outlines (PROJ-4);
-- locale routes, Pages base, root redirect, sidebar labels/order/collapse,
+- locale routes, Pages base, root redirect, indexless-group redirects,
+  sidebar labels/order/collapse,
   lab pagination, GitHub source links, Pagefind, no fallback routes
-  (SITE-2..14);
+  (SITE-2..15);
 - repeat projection/build introduces no source changes or newly tracked
   files (PROJ-6);
 - built-output inspection for forbidden Mermaid client JS (DIAG-3) +
@@ -791,6 +792,7 @@ class TestRoutesNavCompat(unittest.TestCase):
         from publishing.navigation import (build_lab_sequences,
                                             build_sidebars,
                                             build_starlight_sidebar,
+                                            get_group_redirects,
                                             get_redirects)
         from publishing.site import (astro_base, astro_site,
                                      generate_astro_config)
@@ -798,7 +800,9 @@ class TestRoutesNavCompat(unittest.TestCase):
         self.lab_seqs = build_lab_sequences(self.nav)
         self.starlight_sidebar = build_starlight_sidebar(
             self.per_locale, self.config)
+        # Same merge as run_site_build: SITE-3/4 roots + SITE-15 groups.
         self.redirects = get_redirects(self.config, self.final)
+        self.redirects.update(get_group_redirects(self.nav, self.config))
         self.astro_text = generate_astro_config(
             self.config, self.identity, self.starlight_sidebar,
             self.redirects)
@@ -830,6 +834,48 @@ class TestRoutesNavCompat(unittest.TestCase):
     def test_no_locale_root_starter_pages(self):
         self.assertNotIn("src/content/docs/en.md", self.files)
         self.assertNotIn("src/content/docs/ru.md", self.files)
+
+    def test_indexless_group_redirects_no_listing_pages(self):
+        # SITE-15: representative indexless groups redirect to the
+        # first descendant lesson in sidebar order; groups with an
+        # index serve it (no redirect); no listing content generated.
+        self.assertEqual(
+            self.redirects["/en/cpp/"], "/en/cpp/intro/")
+        self.assertEqual(
+            self.redirects["/en/cpp/labs/"], "/en/cpp/labs/first/")
+        self.assertEqual(
+            self.redirects["/en/common/labs/"],
+            "/en/common/labs/computer-architecture/")
+        self.assertEqual(
+            self.redirects["/ru/cpp/"], "/ru/cpp/labs/assessment-1/")
+        self.assertEqual(
+            self.redirects["/ru/cpp/labs/"],
+            "/ru/cpp/labs/assessment-1/")
+        for key in ("/en/common/", "/ru/common/"):
+            self.assertNotIn(key, self.redirects)
+        # Root/locale roots are SITE-3/4 entries in the same merged map
+        # (absence from the SITE-15 helper itself is covered by unit
+        # tests); they still point at the root lesson unchanged.
+        self.assertEqual(
+            self.redirects["/"], "/en/common/labs/computer-architecture/")
+        self.assertEqual(
+            self.redirects["/en/"], "/en/common/labs/computer-architecture/")
+        self.assertEqual(
+            self.redirects["/ru/"], "/ru/common/labs/computer-architecture/")
+        # Redirect targets include the project base in Astro config
+        # (same mechanism as the /en/ root redirect, so Astro emits
+        # dist redirect pages for them).
+        self.assertIn('"/en/cpp/": "/R/en/cpp/intro/"', self.astro_text)
+        self.assertIn('"/ru/cpp/labs/": "/R/ru/cpp/labs/assessment-1/"',
+                      self.astro_text)
+        # Only redirect pages: no content file at any group route.
+        for key in self.redirects:
+            if key in ("/", "/en/", "/ru/"):
+                continue
+            rest = key.strip("/")
+            self.assertNotIn(f"src/content/docs/{rest}.md", self.files)
+            self.assertNotIn(f"src/content/docs/{rest}/index.md",
+                             self.files)
 
     def test_no_fallback_routes(self):
         slugs = {e["slug"] for e in self.nav}
@@ -1016,6 +1062,11 @@ class TestBuiltOutputInspection(unittest.TestCase):
         self.assertIn("redirects", nav)
         self.assertIn("base", nav)
         self.assertEqual(nav["base"], "/R/")
+        # SITE-15 group redirects ship in the built project; only as
+        # redirects (no listing content at those routes).
+        self.assertEqual(nav["redirects"]["/en/cpp/"], "/en/cpp/intro/")
+        self.assertEqual(nav["redirects"]["/ru/cpp/"],
+                         "/ru/cpp/labs/assessment-1/")
         # Static SVGs served via public/.
         pub_svgs = sorted((self.out / "public" / "mermaid").glob("*.svg"))
         self.assertGreaterEqual(len(pub_svgs), 4)

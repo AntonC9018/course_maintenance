@@ -1,4 +1,4 @@
-"""Starlight navigation data (SITE-2..SITE-14, issue #11).
+"""Starlight navigation data (SITE-2..SITE-15, issue #11).
 
 Pure, stdlib-only helpers for locale-prefixed routes, redirects, sidebar
 generation, lab pagination, GitHub source links, Pagefind and base path.
@@ -11,7 +11,10 @@ Sidebar model (per locale, snapshot-friendly):
   language prefix (``en/...``), matching ``nav.json`` slugs and
   ``src/content/docs/<slug>.md`` projection paths.
 - group: ``{"label": str, "collapsed": True, "items": [...]}`` (never
-  clickable, never synthetic; SITE-10).
+  clickable, never synthetic; SITE-10). Indexless groups additionally get
+  an Astro redirect to their first descendant lesson (SITE-15;
+  :func:`get_group_redirects`); a redirect is not a listing page and
+  generates no content.
 
 Starlight conversion (``to_starlight_sidebar``) strips the language prefix
 (Starlight slugs exclude the locale directory) and adds ``translations``
@@ -156,6 +159,141 @@ def get_redirects(config, final_slugs: dict[str, str]) -> dict[str, str]:
     return out
 
 
+def get_group_redirects(nav: list[dict], config) -> dict[str, str]:
+    """Indexless-group redirects (SITE-15).
+
+    Every sidebar group route ``/{lang}/{group...}/`` without an index
+    lesson redirects to the first descendant lesson in that group's
+    sidebar order (same ordering as :func:`build_sidebars`: direct
+    lessons before subgroups, SITE-9 numeric incl ``21a`` then
+    alphabetical, unelected index/README/doc right after the index link
+    per SITE-7; recurse into the first subgroup when a group has no
+    direct lesson children). Groups with an index lesson serve that
+    lesson and get no redirect. Root/``/{lang}/`` are SITE-3/4
+    (:func:`get_redirects`) and are never emitted here.
+
+    Keys/values are logical (base-less) trailing-slash URLs, the same
+    form as :func:`get_redirects` output; :mod:`publishing.site` adds
+    the Pages base when rendering Astro ``redirects``. Sorted by key;
+    deterministic.
+    """
+    langs = [l.code for l in config.languages]
+    by_lang: dict[str, list[dict]] = {l: [] for l in langs}
+    for entry in nav:
+        if entry.get("lang") in by_lang:
+            by_lang[entry["lang"]].append(entry)
+    out: dict[str, str] = {}
+    for lang in langs:
+        rest_to_entry, all_groups = _locale_rest_map(by_lang[lang])
+        for group_rest in sorted(all_groups):
+            if not group_rest:
+                continue  # site/locale roots: SITE-3/4, not SITE-15.
+            if group_rest in rest_to_entry:
+                continue  # indexed group serves its lesson.
+            target = _first_descendant_slug(
+                group_rest, rest_to_entry, lang, all_groups)
+            if target is not None:
+                out[f"/{lang}/{group_rest}/"] = f"/{target}/"
+    return dict(sorted(out.items()))
+
+
+def _first_descendant_slug(group_rest: str, rest_to_entry: dict,
+                           lang: str, all_groups: set[str]) -> str | None:
+    """First lesson slug below a group in sidebar order (SITE-15)."""
+    lessons, subgroups = _ordered_children(
+        group_rest, rest_to_entry, lang, all_groups)
+    if lessons:
+        return lessons[0]["slug"]
+    for sub in subgroups:
+        hit = _first_descendant_slug(sub, rest_to_entry, lang, all_groups)
+        if hit is not None:
+            return hit
+    return None
+
+
+def _locale_rest_map(entries: list[dict]
+                     ) -> tuple[dict[str, dict], set[str]]:
+    """Per-locale rest index + group paths (shared sidebar/redirect base).
+
+    ``rest_to_entry`` maps language-less rests to nav entries (bare
+    language roots skipped: no starter pages, SITE-3). ``all_groups``
+    holds every parent prefix plus every index rest with children.
+    """
+    rest_to_entry: dict[str, dict] = {}
+    for e in entries:
+        rest = strip_lang(e["slug"])
+        # Skip bare language roots (should not occur; no starter pages).
+        if not rest:
+            continue
+        rest_to_entry[rest] = e
+    rests = sorted(rest_to_entry)
+    # Index rests: entry rest equals a group path. Every entry rest is a
+    # potential group path if other entries live below it.
+    all_groups: set[str] = set([""])
+    for rest in rests:
+        cur = rest
+        while "/" in cur:
+            cur = cur.rpartition("/")[0]
+            all_groups.add(cur)
+        # Top-level single-segment rests (e.g. "common") have parent ""
+        # already; single-segment index rests are groups themselves.
+    for rest in rests:
+        # An index rest is itself a group when it has children.
+        prefix = rest + "/"
+        if any(r.startswith(prefix) for r in rests):
+            all_groups.add(rest)
+    return rest_to_entry, all_groups
+
+
+def _split_direct_lessons(group_rest: str, rest_to_entry: dict
+                        ) -> tuple[list[dict], list[dict]]:
+    """(unelected, ordinary) direct child lessons in sidebar order."""
+    child_lessons = [
+        e for r, e in rest_to_entry.items()
+        if _group_parent(r) == group_rest and r != group_rest
+    ]
+    unelected: list[dict] = []
+    ordinary: list[dict] = []
+    for e in child_lessons:
+        base = e.get("source", "").rpartition("/")[2].lower()
+        last = e["slug"].strip("/").split("/")[-1]
+        if base in _UNELECTED_PRECEDENCE and last in (
+                "index", "readme", "doc"):
+            unelected.append(e)
+        else:
+            ordinary.append(e)
+    unelected.sort(key=lambda e: (
+        _UNELECTED_PRECEDENCE.get(
+            e.get("source", "").rpartition("/")[2].lower(), 9),
+        e["slug"]))
+    ordinary.sort(key=lambda e: (e.get("order", 0), e["slug"]))
+    return unelected, ordinary
+
+
+def _ordered_children(group_rest: str, rest_to_entry: dict, lang: str,
+                      all_groups: set[str]
+                      ) -> tuple[list[dict], list[str]]:
+    """Direct lessons + subgroups of a group in sidebar order (SITE-7/9).
+
+    Lessons (unelected index/README/doc in precedence order, then
+    ordinary by projection order) come before subgroups (sorted by
+    label for determinism). Shared by sidebar construction and SITE-15
+    redirect targets so the two can never order divergently.
+    """
+    unelected, ordinary = _split_direct_lessons(
+        group_rest, rest_to_entry)
+    lessons = unelected + ordinary
+    # Direct child subgroups.
+    sub_paths = sorted(
+        g for g in all_groups
+        if g and _group_parent(g) == group_rest and g != group_rest)
+    # Order subgroups by label for determinism.
+    labelled = [(group_label(g, rest_to_entry, lang), g)
+                for g in sub_paths]
+    labelled.sort(key=lambda t: (t[0].casefold(), t[1]))
+    return lessons, [g for _label, g in labelled]
+
+
 def _group_parent(rest: str) -> str:
     if "/" not in rest:
         return ""
@@ -197,71 +335,24 @@ def build_sidebars(nav: list[dict], config) -> dict[str, list]:
 
 
 def _build_one_locale(entries: list[dict], lang: str) -> list:
-    by_slug = {e["slug"]: e for e in entries}
-    # rest -> entry for this locale
-    rest_to_entry: dict[str, dict] = {}
-    for e in entries:
-        rest = strip_lang(e["slug"])
-        # Skip bare language roots (should not occur; no starter pages).
-        if not rest:
-            continue
-        rest_to_entry[rest] = e
-    rests = sorted(rest_to_entry)
-    # Index rests: entry rest equals a group path. Every entry rest is a
-    # potential group path if other entries live below it.
-    all_groups: set[str] = set([""])
-    for rest in rests:
-        cur = rest
-        while "/" in cur:
-            cur = cur.rpartition("/")[0]
-            all_groups.add(cur)
-        # Single-segment rests are children of root; root already added.
-    for rest in rests:
-        # An index rest is itself a group when it has children.
-        prefix = rest + "/"
-        if any(r.startswith(prefix) for r in rests):
-            all_groups.add(rest)
+    rest_to_entry, all_groups = _locale_rest_map(entries)
 
     def build_group(group_rest: str) -> list:
-        # Direct child lessons.
-        child_lessons = [
-            e for r, e in rest_to_entry.items()
-            if _group_parent(r) == group_rest and r != group_rest
-        ]
         # Index lesson for this group.
         index_entry = rest_to_entry.get(group_rest) if group_rest else None
-        unelected: list[dict] = []
-        ordinary: list[dict] = []
-        for e in child_lessons:
-            base = e.get("source", "").rpartition("/")[2].lower()
-            last = e["slug"].strip("/").split("/")[-1]
-            if base in _UNELECTED_PRECEDENCE and last in (
-                    "index", "readme", "doc"):
-                unelected.append(e)
-            else:
-                ordinary.append(e)
-        unelected.sort(key=lambda e: (
-            _UNELECTED_PRECEDENCE.get(
-                e.get("source", "").rpartition("/")[2].lower(), 9),
-            e["slug"]))
-        ordinary.sort(key=lambda e: (e.get("order", 0), e["slug"]))
-        # Direct child subgroups.
-        sub_paths = sorted(
-            g for g in all_groups
-            if g and _group_parent(g) == group_rest and g != group_rest)
-        # Order subgroups by label for determinism.
+        # Direct lessons + subgroups in shared sidebar order (SITE-7/9;
+        # same order SITE-15 redirect targets use).
+        lessons, sub_paths = _ordered_children(
+            group_rest, rest_to_entry, lang, all_groups)
         labelled = [(group_label(g, rest_to_entry, lang), g)
                     for g in sub_paths]
-        labelled.sort(key=lambda t: (t[0].casefold(), t[1]))
         items: list = []
         if index_entry is not None:
             items.append({
                 "label": INDEX_LINK_LABELS.get(lang, "Overview"),
                 "slug": index_entry["slug"],
             })
-        for e in unelected:
-            items.append({"label": e.get("title", ""), "slug": e["slug"]})
-        for e in ordinary:
+        for e in lessons:
             # Skip entries that are themselves groups with children?
             # An ordinary lesson rest could also be a group path (index
             # with children) -- but then it would be the index (rest ==

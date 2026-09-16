@@ -1,4 +1,4 @@
-"""Starlight navigation + site build (issue #11, SITE-1..14 excl Mermaid).
+"""Starlight navigation + site build (issue #11, SITE-1..15 excl Mermaid).
 
 TDD seam: publishing.navigation (pure) + publishing.site (config
 generation + `site build` handler with mocked npm). All repos live in
@@ -519,6 +519,127 @@ class TestRedirectsLocalesBase(unittest.TestCase):
         self.assertTrue(VIEW_ON_GITHUB_LABELS["ru"])
 
 
+class TestGroupRedirects(unittest.TestCase):
+    """Indexless sidebar groups redirect to first descendant (SITE-15)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "course"
+        make_repo(self.root, dict(RICH_FILES))
+        self.config, self.identity, self.final, self.files, \
+            self.copies, self.nav = load_nav(self.root)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_indexless_groups_redirect_to_first_descendant(self):
+        from publishing.navigation import get_group_redirects
+        redirects = get_group_redirects(self.nav, self.config)
+        self.assertEqual(redirects, {
+            "/en/common/labs/": "/en/common/labs/computer-architecture/",
+            "/en/common/sub-topic/": "/en/common/sub-topic/foo/",
+            "/en/cpp/": "/en/cpp/intro/",
+            "/en/cpp/labs/": "/en/cpp/labs/first/",
+            "/en/dsa/": "/en/dsa/arrays/",
+            "/en/dsa/labs/": "/en/dsa/labs/sorting/",
+            "/ru/common/labs/": "/ru/common/labs/computer-architecture/",
+            "/ru/cpp/": "/ru/cpp/labs/assessment-1/",
+            "/ru/cpp/labs/": "/ru/cpp/labs/assessment-1/",
+        })
+
+    def test_groups_with_index_get_no_redirect(self):
+        from publishing.navigation import get_group_redirects
+        redirects = get_group_redirects(self.nav, self.config)
+        # Indexed groups serve the index lesson (no redirect).
+        for key in ("/en/common/", "/en/common/guide/",
+                    "/en/cpp/advanced-programming-fundamentals/",
+                    "/ru/common/"):
+            self.assertNotIn(key, redirects)
+        # Root/locale roots are SITE-3/4, not group redirects.
+        for key in ("/", "/en/", "/ru/"):
+            self.assertNotIn(key, redirects)
+
+    def test_recurse_into_first_subgroup_by_label(self):
+        from types import SimpleNamespace
+        from publishing.navigation import get_group_redirects
+        config = SimpleNamespace(
+            languages=[SimpleNamespace(code="en")],
+            default_language="en")
+        nav = [
+            {"slug": "en/g/beta/x", "lang": "en", "title": "X",
+             "source": "en/g/beta/01_x.md", "order": 1},
+            {"slug": "en/g/alpha/y", "lang": "en", "title": "Y",
+             "source": "en/g/alpha/01_y.md", "order": 1},
+        ]
+        redirects = get_group_redirects(nav, config)
+        # No direct lessons under g: recurse into first subgroup by
+        # label (Alpha before Beta), not by route or insertion order.
+        self.assertEqual(redirects["/en/g/"], "/en/g/alpha/y/")
+        self.assertEqual(redirects["/en/g/alpha/"], "/en/g/alpha/y/")
+        self.assertEqual(redirects["/en/g/beta/"], "/en/g/beta/x/")
+
+    def test_index_group_no_redirect_synthetic_nav(self):
+        from types import SimpleNamespace
+        from publishing.navigation import get_group_redirects
+        config = SimpleNamespace(
+            languages=[SimpleNamespace(code="en")],
+            default_language="en")
+        nav = [
+            {"slug": "en/h", "lang": "en", "title": "H Index",
+             "source": "en/h/index.md", "order": 0},
+            {"slug": "en/h/a", "lang": "en", "title": "A",
+             "source": "en/h/01_a.md", "order": 1},
+        ]
+        self.assertEqual(get_group_redirects(nav, config), {})
+
+    def test_deterministic_sorted(self):
+        from publishing.navigation import get_group_redirects
+        first = get_group_redirects(self.nav, self.config)
+        second = get_group_redirects(self.nav, self.config)
+        self.assertEqual(first, second)
+        self.assertEqual(list(first), sorted(first))
+
+    def test_existing_root_redirects_unchanged(self):
+        from publishing.navigation import get_group_redirects, get_redirects
+        root = get_redirects(self.config, self.final)
+        self.assertEqual(
+            root, {"/": "/en/common/labs/computer-architecture/",
+                   "/en/": "/en/common/labs/computer-architecture/",
+                   "/ru/": "/ru/common/labs/computer-architecture/"})
+        # No key overlap between root and group redirects.
+        group = get_group_redirects(self.nav, self.config)
+        self.assertFalse(set(root) & set(group))
+
+    def test_astro_config_includes_group_redirects_with_base(self):
+        from publishing.navigation import (
+            build_sidebars, build_starlight_sidebar, get_group_redirects,
+            get_redirects)
+        from publishing.site import generate_astro_config
+        per_locale = build_sidebars(self.nav, self.config)
+        sidebar = build_starlight_sidebar(per_locale, self.config)
+        redirects = dict(get_redirects(self.config, self.final))
+        redirects.update(get_group_redirects(self.nav, self.config))
+        text = generate_astro_config(
+            self.config, self.identity, sidebar, redirects)
+        # Group redirects use the same Astro mechanism (SITE-2 base
+        # prefix) as locale roots, so Astro materializes dist redirect
+        # pages for them exactly as it does for /en/ today.
+        self.assertIn('"/en/cpp/": "/R/en/cpp/intro/"', text)
+        self.assertIn('"/en/cpp/labs/": "/R/en/cpp/labs/first/"', text)
+        self.assertIn('"/ru/cpp/": "/R/ru/cpp/labs/assessment-1/"', text)
+        # No listing content is generated for those routes (SITE-10):
+        # no content file exists whose route equals a redirect source.
+        for key in redirects:
+            if key in ("/", "/en/", "/ru/"):
+                continue
+            rest = key.strip("/")
+            lang = rest.split("/")[0]
+            self.assertNotIn(f"src/content/docs/{rest}.md", self.files)
+            self.assertNotIn(f"src/content/docs/{rest}/index.md",
+                             self.files)
+            _ = lang
+
+
 class TestPinnedVersions(unittest.TestCase):
     def test_package_json_matches_renderer_lock(self):
         from publishing.site import PINNED_VERSIONS, generate_package_json
@@ -612,6 +733,25 @@ class TestSiteBuildOp(unittest.TestCase):
         self.assertIn("en", nav_data["sidebar"])
         self.assertIn("ru", nav_data["sidebar"])
         self.assertIn("redirects", nav_data)
+        # SITE-15: indexless group redirects ride along to the built
+        # config (Astro materializes dist redirect pages from them).
+        self.assertEqual(
+            nav_data["redirects"]["/en/cpp/"], "/en/cpp/intro/")
+        self.assertEqual(
+            nav_data["redirects"]["/en/cpp/labs/"],
+            "/en/cpp/labs/first/")
+        self.assertEqual(
+            nav_data["redirects"]["/ru/cpp/"],
+            "/ru/cpp/labs/assessment-1/")
+        cfg_text = (self.out / "astro.config.mjs").read_text(
+            encoding="utf-8")
+        self.assertIn('"/en/cpp/": "/R/en/cpp/intro/"', cfg_text)
+        # ... and no listing content is emitted for those routes.
+        docs = self.out / "src" / "content" / "docs"
+        for probe in ("en/cpp.md", "en/cpp/labs.md", "ru/cpp.md",
+                      "en/dsa.md", "en/common/labs.md"):
+            self.assertFalse((docs / probe).is_file(),
+                             f"synthetic listing emitted: {probe}")
 
     def test_site_check_readonly(self):
         before = {p.resolve(): p.read_bytes()
