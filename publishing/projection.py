@@ -575,7 +575,10 @@ def write_projection(out_dir: Path, files: dict[str, str],
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(files[rel], encoding='utf-8')
     for src_abs, copy_rel in sorted(copy_list, key=lambda t: t[1]):
-        dest = out_dir / Path(*copy_rel.split('/'))
+        # Images are served from public/ below the Pages base (SITE-2);
+        # markdown references /<repo>/assets/... (see links.resolve_link).
+        # Copy to public/<copy_rel> so Astro copies public/ -> dist/.
+        dest = out_dir / "public" / Path(*copy_rel.split('/'))
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(Path(src_abs).read_bytes())
     (out_dir / 'nav.json').write_text(

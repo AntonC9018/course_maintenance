@@ -371,7 +371,9 @@ def write_site_project(out_dir: Path, files: dict[str, str], copy_list,
             pub.parent.mkdir(parents=True, exist_ok=True)
             pub.write_text(files[rel], encoding="utf-8")
     for _src_abs, copy_rel in sorted(copy_list, key=lambda t: t[1]):
-        dest = out_dir / Path(*copy_rel.split("/"))
+        # Images served from public/ below the Pages base (SITE-2);
+        # markdown references /<repo>/assets/... (see links.resolve_link).
+        dest = out_dir / "public" / Path(*copy_rel.split("/"))
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(Path(_src_abs).read_bytes())
     (out_dir / "nav.json").write_text(

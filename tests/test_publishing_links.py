@@ -207,6 +207,25 @@ class TestResolveTargets(unittest.TestCase):
         self.assertNotIn("github.com", out.url)
         self.assertIn("pic.png", out.url)
 
+    def test_image_url_absolute_with_base_for_astro(self):
+        # Astro serves public/ below the Pages project base (SITE-2); a
+        # relative assets/... would resolve against the lesson's nested
+        # slug and fail the renderer build (ImageNotFound). Image URLs must
+        # be absolute with the owning repo's base prefix.
+        out = self._resolve("en/guide/01_intro.md",
+                            "../assets/pic.png", is_image=True)
+        self.assertEqual(out.kind, "image")
+        # Base is /<repo>/ (identity R -> /R/).
+        self.assertTrue(out.url.startswith("/R/assets/"),
+                        f"image URL should be absolute with base, got {out.url!r}")
+        self.assertIn("pic.png", out.url)
+        # copy_rel stays base-less and public-less (logical mapping
+        # assets/<owner>/<repo>/<repo-rel>); writers prepend public/.
+        assert out.copy_rel is not None
+        self.assertTrue(out.copy_rel.startswith("assets/O/R/"))
+        self.assertFalse(out.copy_rel.startswith("public/"))
+        self.assertFalse(out.copy_rel.startswith("/"))
+
     def test_link_syntax_to_same_image_is_github_not_copy(self):
         out = self._resolve("en/guide/01_intro.md",
                             "../assets/pic.png", is_image=False)

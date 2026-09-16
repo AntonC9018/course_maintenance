@@ -392,6 +392,33 @@ class TestImagesLinksNav(unittest.TestCase):
         # published link became canonical
         self.assertIn("https://", text)
 
+    def test_proj_image_absolute_with_base_copied_to_public(self):
+        # Astro serves public/ below the Pages base (SITE-2); markdown must
+        # reference /<repo>/assets/... absolute, and the file must land
+        # under public/assets/... so the renderer build resolves it.
+        make_repo(self.root, {
+            "en/labs/common/01_computer_architecture.md": (
+                "---\ntitle: T\n---\n# T\n\n"
+                "![pic](../../assets/pic.png)\n"),
+            "en/guide/01_intro.md": "---\ntitle: I\n---\n# I\n",
+            "en/assets/pic.png": b"\x89PNGDATA",
+            "ru/lesson.md": "---\ntitle: R\n---\n# R\n",
+        })
+        proc = run_projection(self.root, self.out)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        text = read_projected(self.out, "en/common/labs/computer-architecture")
+        # Absolute with base /R/ (test fixture owner O, repo R).
+        self.assertIn("/R/assets/O/R/en/assets/pic.png", text)
+        # Copied under public/, not bare assets/ at out root.
+        expected = self.out / "public" / "assets" / "O" / "R" / "en" / "assets" / "pic.png"
+        self.assertTrue(expected.is_file(),
+                        f"expected copied image at {expected}")
+        self.assertEqual(expected.read_bytes(), b"\x89PNGDATA")
+        # No stray copy at bare assets/ root (writers use public/).
+        bare = self.out / "assets" / "O" / "R" / "en" / "assets" / "pic.png"
+        self.assertFalse(bare.exists(),
+                         f"image should not be copied to bare {bare}")
+
     def test_proj5_order_injected_renderer_only(self):
         make_repo(self.root, {
             "en/labs/common/01_computer_architecture.md":

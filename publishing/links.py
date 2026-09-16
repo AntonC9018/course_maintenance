@@ -353,7 +353,14 @@ def resolve_link(source_abs: Path | str, raw_dest: str, *,
             f"assets/{repo_ident.owner}/{repo_ident.repo}"
         quoted_asset = "/".join(
             urllib.parse.quote(p, safe="") for p in copy_rel_raw.split("/"))
-        return ResolvedLink(kind="image", url=quoted_asset + suffix,
+        # Astro serves public/ below the Pages project base (SITE-2), so
+        # image URLs are absolute with the owning repo's base prefix
+        # (e.g. /R/assets/O/R/en/assets/pic.png). Relative assets/... would
+        # resolve against the lesson's nested slug and fail the renderer
+        # build (ImageNotFound). Copy destination is public/<copy_rel>
+        # (see projection/site writers); URL is base + copy_rel.
+        base = f"/{repo_ident.repo}/"
+        return ResolvedLink(kind="image", url=base + quoted_asset + suffix,
                             copy_source=resolved,
                             copy_rel=copy_rel_raw)
 
