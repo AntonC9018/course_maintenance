@@ -82,13 +82,28 @@ def browser_cache_key(playwright: str | None = None,
 
 
 def run_maintain_check(repo: Path) -> int:
-    """Run existing maintenance checks in read-only ``--check`` mode."""
+    """Run existing maintenance checks in read-only ``--check`` mode.
+
+    Scoped to course sources: when the repo has ``en/``/``ru/`` language
+    roots, only those plus root-level ``*.md`` are checked. The
+    ``course_maintenance`` submodule (own CI), ``node_modules``,
+    renderer outputs, and other tooling are never treated as lessons.
+    """
     from maintenance.pipeline import run as run_pipeline
 
     repo = Path(repo).resolve()
     print("--- ci: maintain check ---")
+    targets: list[Path] = []
+    for lang in ("en", "ru"):
+        lang_dir = repo / lang
+        if lang_dir.is_dir():
+            targets.append(lang_dir)
+    # Root-level docs (README, AGENTS) still checked; submodule excluded.
+    targets.extend(sorted(repo.glob("*.md")))
+    if not targets:
+        targets = [repo]
     try:
-        code = run_pipeline([repo], root=repo, check_only=True, quiet=False)
+        code = run_pipeline(targets, root=repo, check_only=True, quiet=False)
     except Exception as exc:  # defensive: actionable, still nonzero
         print(f"error: ci stage 'maintain check' failed for {repo}: {exc}; "
               f"{_FIX_CI}", file=sys.stderr)

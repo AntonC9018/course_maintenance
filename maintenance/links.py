@@ -70,11 +70,15 @@ class LinkFixer:
         self._index()
 
     def _index(self):
+        skip = {"node_modules", ".astro", "dist", ".venv", "__pycache__"}
         for dirpath, dirnames, filenames in os.walk(self.root):
             if '.git' in Path(dirpath).parts:
                 continue
+            if any(part in skip for part in Path(dirpath).parts):
+                continue
             d = Path(dirpath)
-            dirnames[:] = [x for x in dirnames if x != '.git']
+            dirnames[:] = [x for x in dirnames
+                           if x != '.git' and x not in skip]
             for fn in filenames:
                 p = (d / fn).resolve()
                 self.all_files.append(p)

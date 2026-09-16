@@ -128,6 +128,7 @@ def discover_rename_dirs(explicit_dirs: list) -> list:
     A dir qualifies if it directly contains >=1 ordered *.md file.
     Skips .git and hidden directories.
     """
+    skip = {"node_modules", ".astro", "dist", ".venv", "__pycache__"}
     found: set = set()
     for top in explicit_dirs:
         top = top.resolve()
@@ -135,8 +136,11 @@ def discover_rename_dirs(explicit_dirs: list) -> list:
             continue
         for dirpath, dirnames, filenames in os.walk(top):
             dirnames[:] = [x for x in dirnames
-                           if x != '.git' and not x.startswith('.')]
+                           if x != '.git' and not x.startswith('.')
+                           and x not in skip]
             if '.git' in Path(dirpath).parts:
+                continue
+            if any(part in skip for part in Path(dirpath).parts):
                 continue
             d = Path(dirpath)
             if any(parse_ordered(fn) is not None and fn.lower().endswith('.md')

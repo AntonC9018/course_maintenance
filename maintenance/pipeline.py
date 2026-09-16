@@ -13,6 +13,18 @@ from .headings import run_headings
 from .links import run_links
 from .rename import discover_rename_dirs, run_rename_on_dirs
 
+# Directories never treated as course sources (dependency installs,
+# renderer outputs, caches). Skipped by collect_markdown so CI stays
+# green after `npm ci` creates renderer/node_modules with hundreds of
+# third-party READMEs.
+SKIP_DIR_NAMES = frozenset({
+    "node_modules", ".astro", "dist", ".venv", "__pycache__",
+})
+
+
+def _is_skipped(path: Path) -> bool:
+    return any(part in SKIP_DIR_NAMES for part in path.parts)
+
 
 def collect_markdown(paths: list) -> list:
     files = []
@@ -24,7 +36,10 @@ def collect_markdown(paths: list) -> list:
             files.extend(sorted(p.rglob('*.md')))
         elif p.is_file():
             files.append(p)
-    return [f for f in files if '.git' not in f.parts and f.suffix.lower() == '.md']
+    return [f for f in files
+            if '.git' not in f.parts
+            and not _is_skipped(f)
+            and f.suffix.lower() == '.md']
 
 
 def collect_explicit_dirs(paths: list) -> list:
