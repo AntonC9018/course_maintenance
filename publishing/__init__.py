@@ -39,6 +39,10 @@ Stdlib-only. Layout (one module per responsibility, extensible for #12-15):
   normalization (DIAG-4), Playwright/Chromium toolchain seam (mockable
   offline), inline replacement + disposable SVG files, forbidden client-JS
   checks (DIAG-3).
+- :mod:`publishing.ci` -- shared CI entry point (#14, CI-1..CI-12 shared
+  side): maintain check + publishing check + compatibility suite +
+  complete site build in order, read-only wrt sources, pinned
+  Python/Node/npm/browser versions + safe cache keys.
 """
 
 from __future__ import annotations

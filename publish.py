@@ -130,6 +130,16 @@ except ImportError:  # pragma: no cover - publishing package always present
     pass
 
 
+# Issue #14: real `ci` (maintain check + publishing check + compat + site).
+# Overwrites the stub above with one register() line; no logic lives here.
+try:
+    from publishing.ci import run_ci  # noqa: E402
+    register("ci", None, run_ci,
+             "shared CI entry point (checks + compatibility suite + site build)")
+except ImportError:  # pragma: no cover - publishing package always present
+    pass
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         description="Course maintenance dispatcher: "

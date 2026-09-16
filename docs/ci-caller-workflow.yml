@@ -1,0 +1,99 @@
+# Minimal caller workflow for course repositories (issue #14, CI-2).
+
+# Copy this file into a course repository as
+# `.github/workflows/course-site.yml`. It is the thin caller side of the
+# shared CI contract (see `docs/ci-caller-contract.md`). Course repos own
+# only this file; maintenance, publishing validation, compatibility
+# testing, dependency setup, and the complete site build orchestration
+# stay in `course_maintenance` and run through one stable command.
+#
+# Deployment to GitHub Pages (artifact upload, `github-pages`
+# environment, smoke tests) is issue #15 and plugs in as an additional
+# job below; pull-request validation here never deploys (CI-3/CI-4).
+
+name: course-site
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+# CI-9: pull-request validation is read-only. Pages write + id-token
+# permissions are confined to the deployment job (#15) for a successful
+# master build only.
+permissions:
+  contents: read
+
+# CI-10: discard superseded runs; an older run cannot become the final
+# deployment after a newer master revision.
+# CI-5: no path filters; every revision validates completely.
+concurrency:
+  group: course-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      # CI-2/CI-6: check out the course and its pinned course_maintenance
+      # submodule at the committed revision. Never fetch a separate
+      # floating maintenance revision or reusable workflow; a shared-tool
+      # change affects a course only after an explicit submodule-pointer
+      # commit, which this job then validates before any deployment.
+      - name: Checkout course with pinned maintenance submodule
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      # Runtimes pinned by course_maintenance (see publishing/ci.py
+      # PINNED_PYTHON/PINNED_NODE and renderer/package.json). Keep these
+      # versions in sync with the submodule revision checked out above.
+      - name: Setup Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Setup Node 22 with npm cache
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          # CI-8: npm cache keyed by the pinned lockfile revision. A
+          # different renderer/package-lock.json never hits this cache.
+          cache: npm
+          cache-dependency-path: course_maintenance/renderer/package-lock.json
+
+      # CI-8: Playwright/Chromium runtime cache. Keyed by the pinned
+      # Playwright + Chromium versions (publishing/site.py PINNED_VERSIONS
+      # / PINNED_BROWSERS) and the lockfile hash, so a browser/toolchain
+      # bump never reuses a stale browser. Cached browsers are runtimes
+      # only, never authoritative build output.
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-1.48.2-chromium-130.0.6723.19-${{ hashFiles('course_maintenance/renderer/package-lock.json') }}
+          restore-keys: |
+            playwright-1.48.2-chromium-130.0.6723.19-
+
+      - name: Install renderer dependencies
+        run: npm ci --prefix course_maintenance/renderer --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        run: npx --prefix course_maintenance/renderer playwright install chromium
+
+      # CI-1: one shared command runs maintain check, publishing checks,
+      # the compatibility suite, and a complete static site build, in
+      # that order. Read-only wrt sources; nonzero exit on any failure
+      # with the source path + rule + corrective operation. CI never
+      # writes or commits source metadata (CI-5).
+      - name: Shared CI validation (maintain + publishing + compat + site)
+        run: python3 course_maintenance/publish.py ci --course-repo .
+
+  # Issue #15 owns the deployment job (validate + build this exact
+  # revision, upload Pages artifact, deploy via the github-pages
+  # environment, bounded-retry smoke tests). It is sketched here only to
+  # fix the contract: needs `needs: [validate]`, `if: github.event_name
+  # == 'push'`, `permissions: { pages: write, id-token: write }`, and the
+  # same pinned actions + concurrency above. Pull requests never deploy.

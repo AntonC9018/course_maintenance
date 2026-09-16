@@ -18,8 +18,8 @@ from tests.helpers import REPO_ROOT, run_publish
 PUBLISH_PY = REPO_ROOT / "publish.py"
 
 REQUIRED_OPS: list = [
-    # All four spec operations are implemented since #11 (`ci` stays
-    # stubbed until #14).
+    # All four spec operations are implemented since #11, and `ci` is
+    # implemented since #14 (shared CI entry point).
 ]
 
 # `projection build` is implemented since issue #10 (deterministic
@@ -92,11 +92,14 @@ class TestPublishDispatcher(unittest.TestCase):
         finally:
             publish.unregister("test-seam", "ping")
 
-    def test_ci_stub_present(self):
+    def test_ci_implemented(self):
+        # Implemented in #14: missing config is a validation error (exit 1),
+        # not "not yet implemented".
         proc = run_publish("ci", "--course-repo", str(self.root))
-        self.assertNotEqual(proc.returncode, 0)
-        self.assertIn(
-            "not yet implemented", (proc.stdout + proc.stderr).lower())
+        self.assertEqual(proc.returncode, 1)
+        combined = proc.stdout + proc.stderr
+        self.assertNotIn("not yet implemented", combined.lower())
+        self.assertIn("course-publishing.json", combined)
 
     def test_publishing_check_implemented_read_only(self):
         # Implemented in #7: missing config is a validation error (exit 1),
