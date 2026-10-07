@@ -38,6 +38,35 @@ class TestHeadings(unittest.TestCase):
         # H3 resequencing still applies.
         self.assertIn("### 1. A", new_text)
 
+    def test_h3_numbering_restarts_at_each_h2(self):
+        text = "## Examples\n### 5. A\n### 9. B\n## Practice\n### 3. C\n### 7. D\n"
+        expected = "## Examples\n### 1. A\n### 2. B\n## Practice\n### 1. C\n### 2. D\n"
+        new_text, _, _, count = fix_headings_in_text(text, None)
+        self.assertEqual(new_text, expected)
+        self.assertEqual(count, 4)
+        self.assertEqual(fix_headings_in_text(new_text, None)[0], expected)
+
+    def test_unnumbered_h3_does_not_restart_numbering(self):
+        text = "## Examples\n### 5. A\n### Note\n#### Detail\n### 9. B\n"
+        expected = "## Examples\n### 1. A\n### Note\n#### Detail\n### 2. B\n"
+        self.assertEqual(fix_headings_in_text(text, None)[0], expected)
+
+    def test_fenced_headings_are_untouched_and_do_not_restart_numbering(self):
+        for fence in ("```", "~~~~"):
+            with self.subTest(fence=fence):
+                code = f"{fence}text\n## Not a section\n### 8. Not an example\n{fence}\n"
+                text = "## Examples\n### 5. A\n" + code + "### 9. B\n"
+                expected = "## Examples\n### 1. A\n" + code + "### 2. B\n"
+                new_text, _, _, count = fix_headings_in_text(text, None)
+                self.assertEqual(new_text, expected)
+                self.assertEqual(count, 2)
+
+    def test_shorter_fence_does_not_end_a_code_block(self):
+        code = "````text\n```\n## Still code\n### 8. Still code\n````\n"
+        text = "### 5. A\n" + code + "### 9. B\n"
+        self.assertEqual(fix_headings_in_text(text, None)[0],
+                         "### 1. A\n" + code + "### 2. B\n")
+
     def test_run_headings_fixes_file(self):
         p = write(self.root / "03_topic.md", "# 7. Title\n### 9. A\n### 2. B\n")
         changed = run_headings([p], check_only=False, quiet=True)

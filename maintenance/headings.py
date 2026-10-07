@@ -7,17 +7,34 @@ from .patterns import FENCE_RE, H1_RE, H3_RE
 _H1_ANY_RE = re.compile(r'^\s{0,3}#\s+\S')
 _H1_SETEXT_RE = re.compile(r'^\s{0,3}=+\s*$')
 _ATX_ANY_RE = re.compile(r'^\s{0,3}#{1,6}(?:\s+|$)')
+_H2_RE = re.compile(r'^\s{0,3}##(?:\s+|$)')
+_FENCE_OPEN_RE = re.compile(r'^\s{0,3}(`{3,}|~{3,})')
 
 
 def fix_headings_in_text(text: str, h1_number):
     """Apply H1/H3 fixes. Returns (new_text, h1_msgs, h3_msgs, h3_count)."""
     lines = text.splitlines(keepends=True)
     h3_counter = 0
+    h3_total = 0
+    fence = None
     h1_fixed = h1_number is None  # no H1 expectation if filename unnumbered
     h1_msgs: list = []
     h3_msgs: list = []
     result = []
     for line in lines:
+        if fence is not None:
+            if re.match(r'^\s{0,3}' + re.escape(fence[0]) +
+                        r'{' + str(len(fence)) + r',}\s*$', line):
+                fence = None
+            result.append(line)
+            continue
+        fence_match = _FENCE_OPEN_RE.match(line)
+        if fence_match:
+            fence = fence_match.group(1)
+            result.append(line)
+            continue
+        if _H2_RE.match(line):
+            h3_counter = 0
         h1_match = H1_RE.match(line)
         if h1_match and not h1_fixed:
             old_num = int(h1_match.group(2))
@@ -30,6 +47,7 @@ def fix_headings_in_text(text: str, h1_number):
         h3_match = H3_RE.match(line)
         if h3_match:
             h3_counter += 1
+            h3_total += 1
             old_num = int(h3_match.group(2))
             if old_num != h3_counter:
                 line = f'{h3_match.group(1)}{h3_counter}{h3_match.group(3)}\n'
@@ -37,7 +55,7 @@ def fix_headings_in_text(text: str, h1_number):
             result.append(line)
             continue
         result.append(line)
-    return ''.join(result), h1_msgs, h3_msgs, h3_counter
+    return ''.join(result), h1_msgs, h3_msgs, h3_total
 
 
 def has_h1(text: str) -> bool:

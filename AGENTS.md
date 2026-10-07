@@ -26,8 +26,9 @@ It replaces the old per-task scripts (`rename_files.py`, `fix_files.py`,
 - **convert**: off unless `--convert-lists` is passed. It rewrites genuine
   ordered lists too, so enable it only for files whose numbered items are
   all meant to become `###` headers.
-- **headings**: `H1` number := `NN_` filename prefix; all `### N.` headers
-  resequenced `1..N`. Files whose `H1` has no number are left alone.
+- **headings**: `H1` number := `NN_` filename prefix; numbered `### N.` headers
+  resequenced starting at 1 in each `##` section. Fenced code is left alone.
+  Files whose `H1` has no number keep that `H1` unchanged.
   `MISSING H1` is reported only for lesson files (those carrying a
   `slug:` frontmatter key); non-lesson docs share the other hygiene
   but must not trip the H1 requirement.
