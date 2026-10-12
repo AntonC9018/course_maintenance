@@ -101,6 +101,22 @@ def snapshot(root: Path):
 
 
 class TestCacheKeys(unittest.TestCase):
+    def test_toolchain_exposes_canonical_lockfile_for_cache_glob(self):
+        from publishing.ci import run_toolchain_show
+        # GitHub's cache glob rejects '.'/'..' segments even when the
+        # filesystem resolves them; composite action paths contain both.
+        relative = REPO_ROOT / '.github/actions/course-ci/../../../renderer/package-lock.json'
+        with tempfile.TemporaryDirectory() as td:
+            output = Path(td) / 'step-outputs'
+            with mock.patch('publishing.ci.lockfile_path', return_value=relative), \
+                    mock.patch.dict(os.environ, {'GITHUB_OUTPUT': str(output)}):
+                self.assertEqual(run_toolchain_show(REPO_ROOT, mock.Mock()), 0)
+            values = dict(line.split('=', 1) for line in output.read_text().splitlines())
+            path = Path(values['npm_lockfile'])
+            self.assertTrue(path.is_file())
+            self.assertEqual(path, relative.resolve())
+            self.assertFalse(set(path.parts) & {'.', '..'})
+
     def test_npm_cache_key_changes_with_lockfile(self):
         from publishing.ci import npm_cache_key
         with tempfile.TemporaryDirectory() as td:
@@ -387,7 +403,7 @@ class TestCallerContract(unittest.TestCase):
         action = (REPO_ROOT / ".github/actions/course-ci/action.yml").read_text(encoding="utf-8")
         self.assertIn('publish.py" ci --course-repo', action)
         self.assertIn("ci prepare", action)
-        self.assertIn("package-lock.json", action)
+        self.assertIn("steps.pins.outputs.npm_lockfile", action)
         self.assertIn("submodules", low)
         self.assertIn("recursive", low)
         # No floating reusable-workflow revision independent of submodule.
@@ -425,7 +441,7 @@ class TestCallerContract(unittest.TestCase):
         self.assertGreaterEqual(len(pins), 2,
                                 "shared CI must pin actions to SHAs")
         # Caches keyed by lockfile/browser versions (CI-8).
-        self.assertIn("package-lock.json", text)
+        self.assertIn("steps.pins.outputs.npm_lockfile", text)
         self.assertTrue("hashfiles" in low or "hash-files" in low
                         or "cache-dependency-path" in low)
         self.assertIn("playwright", low)

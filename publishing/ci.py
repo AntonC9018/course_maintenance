@@ -74,6 +74,7 @@ def run_toolchain_show(course_repo, args) -> int:
     outputs = {
         "python_version": PINNED_PYTHON,
         "node_version": PINNED_NODE,
+        "npm_lockfile": str(lockfile_path().resolve()),
         "browser_cache_key": browser_cache_key() + "-" + file_sha256(lockfile_path()),
     }
     for key, value in outputs.items():

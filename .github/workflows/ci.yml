@@ -45,7 +45,7 @@ jobs:
           node-version: ${{ steps.pins.outputs.node_version }}
           # CI-8: npm cache keyed by the pinned lockfile revision.
           cache: npm
-          cache-dependency-path: renderer/package-lock.json
+          cache-dependency-path: ${{ steps.pins.outputs.npm_lockfile }}
 
       # CI-8: Playwright/Chromium runtime cache keyed by pinned versions
       # (publishing/site.py PINNED_VERSIONS/PINNED_BROWSERS) plus the
@@ -66,8 +66,23 @@ jobs:
       - name: Verify CI cache keys track pins
         run: python3 -c "from publishing.ci import browser_cache_key, npm_cache_key; print(npm_cache_key()); print(browser_cache_key())"
 
-      - name: Install renderer dependencies
-        run: npm ci --prefix renderer --no-audit --no-fund
+      - name: Create isolated course for shared-action integration
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          from tests.test_ci import make_min_repo
+          repo = Path(os.environ['RUNNER_TEMP']) / 'course-fixture'
+          make_min_repo(repo)
+          path = repo / 'course-publishing.json'
+          config = json.loads(path.read_text())
+          config['ci'] = {'run_compatibility_tests': False}
+          path.write_text(json.dumps(config))
+          PY
 
-      - name: Install Playwright Chromium
-        run: npx --prefix renderer playwright install chromium
+      - name: Validate and build fixture through the shared action
+        uses: ./.github/actions/course-ci
+        with:
+          course-repo: ${{ runner.temp }}/course-fixture
+          out: ${{ runner.temp }}/course-fixture-site
