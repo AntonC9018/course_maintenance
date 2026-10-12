@@ -29,7 +29,7 @@ def run_publishing_check(course_repo: Path, args) -> int:
     repo = Path(course_repo).resolve()
     try:
         config = load_config(repo)
-        identity = infer_identity(repo)
+        identity = infer_identity(repo, config)
         inventory = build_inventory(repo, config)
     except (ConfigError, IdentityError, InventoryError) as e:
         print(f"error: {e}", file=sys.stderr)

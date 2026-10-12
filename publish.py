@@ -140,14 +140,24 @@ except ImportError:  # pragma: no cover - publishing package always present
     pass
 
 
+from publishing.ci import run_ci_prepare, run_toolchain_show  # noqa: E402
+from publishing.smoke import run_smoke_check  # noqa: E402
+from publishing.pages import run_pages_verify  # noqa: E402
+
+register("smoke", "check", run_smoke_check, "check the published course using configured HTTP probes")
+register("pages", "verify", run_pages_verify, "verify configured GitHub Pages and protection settings")
+register("ci", "prepare", run_ci_prepare, "validate course policy and expose shared dependency pins")
+register("toolchain", "show", run_toolchain_show, "expose shared runtime/browser pins and cache key")
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         description="Course maintenance dispatcher: "
                     "<responsibility> <operation> --course-repo <repo>")
     ap.add_argument("responsibility", nargs="?",
-                    help="metadata | publishing | projection | site | ci")
+                    help="metadata | publishing | projection | site | ci | smoke | pages | toolchain")
     ap.add_argument("operation", nargs="?",
-                    help="generate | check | build (omit for ci)")
+                    help="generate | check | build | prepare | verify | show (omit for ci)")
     ap.add_argument("--course-repo", default=".",
                     help="explicit path to the course-repository root "
                          "(default: .)")
@@ -158,6 +168,9 @@ def build_parser():
     ap.add_argument("--check", action="store_true",
                     help="read-only validation without writing "
                          "(projection/site build only)")
+    ap.add_argument("--base-url", help="override the configured public URL for smoke check")
+    ap.add_argument("--strict", action="store_true",
+                    help="fail pages verify when live settings cannot be read")
     return ap
 
 

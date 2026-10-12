@@ -151,7 +151,7 @@ def build_link_index(course_repo: Path | str, config,
                 f"(resolved to {peer_root}): {exc}",
                 rule="LINK-1", path=config.source_path) from exc
         try:
-            peer_ident = infer_identity(peer_root)
+            peer_ident = infer_identity(peer_root, peer_config)
         except Exception as exc:
             raise LinkError(
                 f"cannot infer identity for peer {peer_rel!r} "

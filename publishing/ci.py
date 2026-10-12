@@ -6,7 +6,7 @@ Stable entry point: ``python3 <course_maintenance>/publish.py ci
 1. existing course-maintenance checks (``maintain.py --check`` semantics,
    read-only);
 2. publishing checks (``publishing check``, read-only);
-3. compatibility suite (``tests.test_compatibility``, isolated temp dirs);
+3. optional compatibility suite (``tests.test_compatibility``, isolated temp dirs);
 4. complete static site build (``site build`` to a disposable directory
    outside the course repo).
 
@@ -33,6 +33,8 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -43,6 +45,44 @@ PINNED_PYTHON = "3.12"
 PINNED_NODE = "22"
 
 _FIX_CI = "operation: ci"
+
+
+def check_pr_ready(config) -> None:
+    """Keep required validation red until its configured label is present."""
+    label = config.ci.required_pr_label
+    if label and os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
+        event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+        labels = {item["name"] for item in event["pull_request"]["labels"]}
+        if label not in labels:
+            raise ValueError(f"Add {label!r} when this pull request is ready for validation")
+
+
+def run_ci_prepare(course_repo: Path, args) -> int:
+    """Validate caller policy and expose shared pins before dependency setup."""
+    from .config import ConfigError, load_config
+    try:
+        config = load_config(course_repo)
+        check_pr_ready(config)
+    except (ConfigError, OSError, ValueError, KeyError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    return run_toolchain_show(course_repo, args)
+
+
+def run_toolchain_show(course_repo, args) -> int:
+    """Expose the shared version/lockfile pins without a course configuration."""
+    outputs = {
+        "python_version": PINNED_PYTHON,
+        "node_version": PINNED_NODE,
+        "browser_cache_key": browser_cache_key() + "-" + file_sha256(lockfile_path()),
+    }
+    for key, value in outputs.items():
+        print(f"{key}={value}")
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+            for key, value in outputs.items():
+                stream.write(f"{key}={value}\n")
+    return 0
 
 
 def maintenance_root() -> Path:
@@ -84,26 +124,25 @@ def browser_cache_key(playwright: str | None = None,
 def run_maintain_check(repo: Path) -> int:
     """Run existing maintenance checks in read-only ``--check`` mode.
 
-    Scoped to course sources: when the repo has ``en/``/``ru/`` language
-    roots, only those plus root-level ``*.md`` are checked. The
-    ``course_maintenance`` submodule (own CI), ``node_modules``,
-    renderer outputs, and other tooling are never treated as lessons.
+    Use ci.maintenance_paths, or configured language roots plus root
+    Markdown documents. Never fall back to scanning shared tooling.
     """
     from maintenance.pipeline import run as run_pipeline
 
     repo = Path(repo).resolve()
     print("--- ci: maintain check ---")
-    targets: list[Path] = []
-    for lang in ("en", "ru"):
-        lang_dir = repo / lang
-        if lang_dir.is_dir():
-            targets.append(lang_dir)
-    # Root-level docs (README, AGENTS) still checked; submodule excluded.
-    targets.extend(sorted(repo.glob("*.md")))
-    if not targets:
-        targets = [repo]
     try:
-        code = run_pipeline(targets, root=repo, check_only=True, quiet=False)
+        from .config import load_config
+        config = load_config(repo)
+        if config.ci.maintenance_paths is None:
+            targets = [repo / lang.root for lang in config.languages]
+            targets.extend(sorted(repo.glob("*.md")))
+        else:
+            targets = [repo / path for path in config.ci.maintenance_paths]
+        print("ci: maintenance targets: " + ", ".join(
+            str(path.relative_to(repo)) for path in targets))
+        code = run_pipeline(targets, root=repo, check_only=True, quiet=False,
+                            heading_numbering=config.maintenance.heading_numbering)
     except Exception as exc:  # defensive: actionable, still nonzero
         print(f"error: ci stage 'maintain check' failed for {repo}: {exc}; "
               f"{_FIX_CI}", file=sys.stderr)
@@ -224,8 +263,14 @@ def run_ci(course_repo: Path, args) -> int:
             print(f"error: {problem}; {_FIX_CI}", file=sys.stderr)
             return 2
 
-    print(f"ci: validating {repo} "
-          f"(maintain check + publishing check + compat suite + site build)")
+    from .config import ConfigError, load_config
+    try:
+        config = load_config(repo)
+        check_pr_ready(config)
+    except (ConfigError, OSError, ValueError, KeyError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    print(f"ci: validating {repo} (course-publishing.json policy)")
     code = run_maintain_check(repo)
     if code != 0:
         print(f"error: ci stage 'maintain check' failed for {repo}; "
@@ -236,11 +281,15 @@ def run_ci(course_repo: Path, args) -> int:
         print(f"error: ci stage 'publishing check' failed for {repo}; "
               f"{_FIX_CI}", file=sys.stderr)
         return code
-    code = run_compat_suite()
-    if code != 0:
-        print(f"error: ci stage 'compatibility suite' failed; "
-              f"{_FIX_CI}", file=sys.stderr)
-        return code
+    if config.ci.run_compatibility_tests:
+        print("ci: running pipeline compatibility tests (configured)")
+        code = run_compat_suite()
+        if code != 0:
+            print(f"error: ci stage 'compatibility suite' failed; "
+                  f"{_FIX_CI}", file=sys.stderr)
+            return code
+    else:
+        print("ci: pipeline compatibility tests disabled by course-publishing.json")
     code = run_site_build_stage(repo, raw_out)
     if code != 0:
         print(f"error: ci stage 'site build' failed for {repo}; "

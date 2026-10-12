@@ -84,16 +84,26 @@ def main(argv=None):
     ap.add_argument('-q', '--quiet', action='store_true',
                     help='only print changed/broken files and the summary')
     args = ap.parse_args(argv)
+    root = Path(args.root).resolve()
+    heading_numbering = "section"
+    if (root / "course-publishing.json").is_file():
+        from publishing.config import ConfigError, load_config
+        try:
+            heading_numbering = load_config(root).maintenance.heading_numbering
+        except ConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
 
     return run(
         args.paths,
-        root=Path(args.root).resolve(),
+        root=root,
         check_only=args.check,
         quiet=args.quiet,
         no_rename=args.no_rename,
         no_headings=args.no_headings,
         no_links=args.no_links,
         convert_lists=args.convert_lists,
+        heading_numbering=heading_numbering,
     )
 
 

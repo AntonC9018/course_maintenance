@@ -30,15 +30,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Read shared toolchain pins
+        id: pins
+        run: python3 publish.py toolchain show
+
       - name: Setup Python 3.12
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.12"
+          python-version: ${{ steps.pins.outputs.python_version }}
 
       - name: Setup Node 22 with npm cache
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: "22"
+          node-version: ${{ steps.pins.outputs.node_version }}
           # CI-8: npm cache keyed by the pinned lockfile revision.
           cache: npm
           cache-dependency-path: renderer/package-lock.json
@@ -51,12 +55,10 @@ jobs:
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-1.48.2-chromium-130.0.6723.19-${{ hashFiles('renderer/package-lock.json') }}
-          restore-keys: |
-            playwright-1.48.2-chromium-130.0.6723.19-
+          key: playwright-${{ runner.os }}-${{ steps.pins.outputs.browser_cache_key }}
 
       - name: Compile check (stdlib only, no install)
-        run: python3 -m py_compile publish.py maintain.py publishing/ci.py publishing/check.py publishing/site.py publishing/projection.py
+        run: python3 -m py_compile publish.py maintain.py publishing/*.py
 
       - name: Shared unit suite (isolated temp-dir fixtures)
         run: python3 -m unittest discover -s tests

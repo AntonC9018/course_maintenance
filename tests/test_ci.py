@@ -170,6 +170,9 @@ class TestCiOrdering(unittest.TestCase):
         calls, p1, p2, p3, p4 = self._patch_all()
         with p1, p2, p3, p4:
             with tempfile.TemporaryDirectory() as td:
+                write_config(Path(td))
+                write(Path(td) / MIN_CONFIG["root_lesson"], "# Root\n")
+                (Path(td) / "ru").mkdir()
                 code = run_ci(Path(td), mock.Mock(out=None))
         self.assertEqual(code, 0)
         self.assertEqual(calls, ["maintain", "publishing", "compat", "site"])
@@ -179,6 +182,9 @@ class TestCiOrdering(unittest.TestCase):
         calls, p1, p2, p3, p4 = self._patch_all(m_maint=1)
         with p1, p2, p3, p4:
             with tempfile.TemporaryDirectory() as td:
+                write_config(Path(td))
+                write(Path(td) / MIN_CONFIG["root_lesson"], "# Root\n")
+                (Path(td) / "ru").mkdir()
                 code = run_ci(Path(td), mock.Mock(out=None))
         self.assertEqual(code, 1)
         self.assertEqual(calls, ["maintain"])
@@ -188,6 +194,9 @@ class TestCiOrdering(unittest.TestCase):
         calls, p1, p2, p3, p4 = self._patch_all(m_pub=1)
         with p1, p2, p3, p4:
             with tempfile.TemporaryDirectory() as td:
+                write_config(Path(td))
+                write(Path(td) / MIN_CONFIG["root_lesson"], "# Root\n")
+                (Path(td) / "ru").mkdir()
                 code = run_ci(Path(td), mock.Mock(out=None))
         self.assertEqual(code, 1)
         self.assertEqual(calls, ["maintain", "publishing"])
@@ -197,6 +206,9 @@ class TestCiOrdering(unittest.TestCase):
         calls, p1, p2, p3, p4 = self._patch_all(m_compat=1)
         with p1, p2, p3, p4:
             with tempfile.TemporaryDirectory() as td:
+                write_config(Path(td))
+                write(Path(td) / MIN_CONFIG["root_lesson"], "# Root\n")
+                (Path(td) / "ru").mkdir()
                 code = run_ci(Path(td), mock.Mock(out=None))
         self.assertEqual(code, 1)
         self.assertEqual(calls, ["maintain", "publishing", "compat"])
@@ -206,6 +218,9 @@ class TestCiOrdering(unittest.TestCase):
         calls, p1, p2, p3, p4 = self._patch_all(m_site=1)
         with p1, p2, p3, p4:
             with tempfile.TemporaryDirectory() as td:
+                write_config(Path(td))
+                write(Path(td) / MIN_CONFIG["root_lesson"], "# Root\n")
+                (Path(td) / "ru").mkdir()
                 code = run_ci(Path(td), mock.Mock(out=None))
         self.assertEqual(code, 1)
         self.assertEqual(calls, ["maintain", "publishing", "compat", "site"])
@@ -215,6 +230,9 @@ class TestCiOrdering(unittest.TestCase):
         calls, p1, p2, p3, p4 = self._patch_all(m_site=2)
         with p1, p2, p3, p4:
             with tempfile.TemporaryDirectory() as td:
+                write_config(Path(td))
+                write(Path(td) / MIN_CONFIG["root_lesson"], "# Root\n")
+                (Path(td) / "ru").mkdir()
                 code = run_ci(Path(td), mock.Mock(out=None))
         self.assertEqual(code, 2)
 
@@ -226,6 +244,9 @@ class TestCiOrdering(unittest.TestCase):
                 import io
                 err = io.StringIO()
                 with mock.patch("sys.stderr", err):
+                    write_config(Path(td))
+                    write(Path(td) / MIN_CONFIG["root_lesson"], "# Root\n")
+                    (Path(td) / "ru").mkdir()
                     code = run_ci(Path(td), mock.Mock(out=None))
         self.assertEqual(code, 1)
         self.assertIn("publishing", err.getvalue().lower())
@@ -362,7 +383,11 @@ class TestCallerContract(unittest.TestCase):
                         "missing docs/ci-caller-workflow.yml fixture")
         text = fixture.read_text(encoding="utf-8")
         low = text.lower()
-        self.assertIn("course_maintenance/publish.py ci --course-repo", text)
+        self.assertIn("uses: ./course_maintenance/.github/actions/course-ci", text)
+        action = (REPO_ROOT / ".github/actions/course-ci/action.yml").read_text(encoding="utf-8")
+        self.assertIn('publish.py" ci --course-repo', action)
+        self.assertIn("ci prepare", action)
+        self.assertIn("package-lock.json", action)
         self.assertIn("submodules", low)
         self.assertIn("recursive", low)
         # No floating reusable-workflow revision independent of submodule.

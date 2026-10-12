@@ -55,7 +55,8 @@ def collect_explicit_dirs(paths: list) -> list:
 
 def run(paths, *, root: Path, check_only: bool, quiet: bool,
         no_rename: bool = False, no_headings: bool = False,
-        no_links: bool = False, convert_lists: bool = False) -> int:
+        no_links: bool = False, convert_lists: bool = False,
+        heading_numbering: str = "section") -> int:
     """Run the maintenance pipeline. Returns the process exit code.
 
     Exit codes: 0 clean/success, 1 dirty in --check mode or rename errors.
@@ -87,7 +88,8 @@ def run(paths, *, root: Path, check_only: bool, quiet: bool,
 
     if not no_headings:
         print(f'--- headings ({len(md_files)} file(s)) ---')
-        headings_count = run_headings(md_files, check_only, quiet)
+        headings_count = run_headings(md_files, check_only, quiet,
+                                      heading_numbering=heading_numbering)
     else:
         print('--- headings (skipped) ---')
         headings_count = 0

@@ -89,11 +89,13 @@ def renderer_dir() -> Path:
 
 
 def astro_base(identity) -> str:
-    return f"/{identity.repo}/"
+    from .navigation import get_site_and_base
+    return get_site_and_base(identity)[1]
 
 
 def astro_site(identity) -> str:
-    return f"https://{identity.owner}.github.io"
+    from .navigation import get_site_and_base
+    return get_site_and_base(identity)[0]
 
 
 def edit_link_base(identity) -> str:
@@ -310,7 +312,7 @@ def _format_prev_next(link: str | None, label: str | None):
 
 
 def augment_projection_files(files: dict[str, str], nav: list[dict],
-                             identity, repo) -> dict[str, str]:
+                             identity, repo, config=None) -> dict[str, str]:
     """Inject lab prev/next + per-page editUrl (SITE-11/SITE-12, SITE-16).
 
     ``files`` maps ``src/content/docs/<slug>.md`` to text (in-memory
@@ -332,9 +334,9 @@ def augment_projection_files(files: dict[str, str], nav: list[dict],
     def display_label(slug: str) -> str:
         return lab_display_label(
             slug, source_by_slug.get(slug, ""),
-            title_by_slug.get(slug, ""))
+            title_by_slug.get(slug, ""), config)
 
-    pag = lab_pagination(nav)
+    pag = lab_pagination(nav, config)
     out: dict[str, str] = {}
     for rel, text in files.items():
         # rel = src/content/docs/<slug>.md
@@ -352,7 +354,7 @@ def augment_projection_files(files: dict[str, str], nav: list[dict],
             blob = github_blob_url(identity, repo_rel)
             fm_lines = _upsert_frontmatter(fm_lines, "editUrl", json.dumps(blob))
         # SITE-11: explicit lab pagination; non-lab untouched.
-        if is_lab_slug(slug) and slug in pag:
+        if is_lab_slug(slug, config) and slug in pag:
             prev_slug = pag[slug]["prev"]
             next_slug = pag[slug]["next"]
 
@@ -386,7 +388,7 @@ def write_site_project(out_dir: Path, files: dict[str, str], copy_list,
     projected Markdown already embeds the same SVG inline (no client JS,
     DIAG-3).
     """
-    from .navigation import VIEW_ON_GITHUB_LABELS
+    from .navigation import source_label
 
     out_dir.mkdir(parents=True, exist_ok=True)
     for rel in sorted(files):
@@ -439,7 +441,7 @@ def write_site_project(out_dir: Path, files: dict[str, str], copy_list,
     i18n_dir = out_dir / "src" / "content" / "i18n"
     i18n_dir.mkdir(parents=True, exist_ok=True)
     for lang in [l.code for l in config.languages]:
-        label = VIEW_ON_GITHUB_LABELS.get(lang, VIEW_ON_GITHUB_LABELS["en"])
+        label = source_label(lang, config)
         (i18n_dir / f"{lang}.json").write_text(
             json.dumps({"page.editLink": label},
                        ensure_ascii=False, indent=2, sort_keys=True) + "\n",
@@ -521,7 +523,7 @@ def run_site_build(course_repo: Path, args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     try:
-        identity = infer_identity(repo)
+        identity = infer_identity(repo, config)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -570,7 +572,7 @@ def run_site_build(course_repo: Path, args) -> int:
             print(f"error: {msg}", file=sys.stderr)
         return 1
     per_locale = build_sidebars(nav, config)
-    lab_sequences = build_lab_sequences(nav)
+    lab_sequences = build_lab_sequences(nav, config)
     starlight_sidebar = build_starlight_sidebar(per_locale, config)
     redirects = get_redirects(config, final)
     # SITE-15: indexless sidebar groups redirect to their first
@@ -595,7 +597,7 @@ def run_site_build(course_repo: Path, args) -> int:
         out_resolved.mkdir(parents=True, exist_ok=True)
         _clean_out_dir(out_resolved)
     try:
-        augmented = augment_projection_files(files, nav, identity, repo)
+        augmented = augment_projection_files(files, nav, identity, repo, config)
         write_site_project(out_resolved, augmented, copy_list, nav,
                            per_locale, lab_sequences, config, identity,
                            starlight_sidebar, redirects)

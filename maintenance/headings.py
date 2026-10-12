@@ -11,7 +11,7 @@ _H2_RE = re.compile(r'^\s{0,3}##(?:\s+|$)')
 _FENCE_OPEN_RE = re.compile(r'^\s{0,3}(`{3,}|~{3,})')
 
 
-def fix_headings_in_text(text: str, h1_number):
+def fix_headings_in_text(text: str, h1_number, *, heading_numbering="section"):
     """Apply H1/H3 fixes. Returns (new_text, h1_msgs, h3_msgs, h3_count)."""
     lines = text.splitlines(keepends=True)
     h3_counter = 0
@@ -33,7 +33,7 @@ def fix_headings_in_text(text: str, h1_number):
             fence = fence_match.group(1)
             result.append(line)
             continue
-        if _H2_RE.match(line):
+        if heading_numbering == "section" and _H2_RE.match(line):
             h3_counter = 0
         h1_match = H1_RE.match(line)
         if h1_match and not h1_fixed:
@@ -114,7 +114,7 @@ def is_lesson(text: str) -> bool:
     return False
 
 
-def run_headings(files: list, check_only: bool, quiet: bool):
+def run_headings(files: list, check_only: bool, quiet: bool, *, heading_numbering="section"):
     """Fix H1/H3 headings. Returns number of files changed."""
     changed = 0
     for path in files:
@@ -122,7 +122,7 @@ def run_headings(files: list, check_only: bool, quiet: bool):
         h1_number = int(m.group(1)) if m else None
         original = path.read_text(encoding='utf-8')
         new_text, h1_msgs, h3_msgs, h3_count = fix_headings_in_text(
-            original, h1_number)
+            original, h1_number, heading_numbering=heading_numbering)
         if new_text == original:
             if not has_h1(new_text) and is_lesson(new_text):
                 changed += 1

@@ -1,3 +1,8 @@
+> Course-specific CI, deployment, navigation, formatting, and metadata
+> policy is now configurable. See `course-configuration.md` for the
+> optional version-1 schema extensions; hardcoded course examples below
+> describe the original rollout, and their values now live in course JSON.
+
 # Initial course publishing specification
 
 This specification defines the first production release of the shared course-publishing system. It turns Markdown in the data-structures-and-algorithms course repository into an independently deployed Astro Starlight site while keeping repository Markdown as the authoring source of truth.

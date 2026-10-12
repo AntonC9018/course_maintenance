@@ -1,9 +1,9 @@
 """Repository and site identity inference (CFG-5).
 
 Infers GitHub repo identity, public GitHub URL, and GitHub Pages project
-URL solely from the local `origin` remote configuration. Requires no
-GitHub CLI or network access and never writes. The published branch is
-always `master` per spec.
+URL from the local `origin` remote configuration and course deployment policy. Requires no
+GitHub CLI or network access and never writes. The branch and optional custom Pages URL come from config.deployment;
+legacy callers default to the master branch and inferred project URL.
 
 A missing `origin` remote (including renamed remotes, detached CI
 checkouts without origin, non-git directories, or unparseable URLs) is a
@@ -126,7 +126,7 @@ def _read_origin_url(course_repo: Path) -> str:
     return proc.stdout.strip()
 
 
-def infer_identity(course_repo: Path | str) -> RepoIdentity:
+def infer_identity(course_repo: Path | str, config=None) -> RepoIdentity:
     """Infer identity from local origin config. Read-only."""
     repo = Path(course_repo).resolve()
     git_config = repo / ".git" / "config"
@@ -140,7 +140,8 @@ def infer_identity(course_repo: Path | str) -> RepoIdentity:
         owner=owner,
         repo=name,
         github_url=f"https://github.com/{owner}/{name}",
-        pages_url=f"https://{owner}.github.io/{name}",
-        default_branch="master",
+        pages_url=(config.deployment.pages_url if config is not None else None)
+                  or f"https://{owner}.github.io/{name}",
+        default_branch=config.deployment.branch if config is not None else "master",
         origin_url=url,
     )

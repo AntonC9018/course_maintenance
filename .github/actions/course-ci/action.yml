@@ -1,0 +1,45 @@
+name: Course document CI
+description: Validate course policy, install the pinned shared toolchain, and build the course.
+inputs:
+  course-repo:
+    description: Course repository root
+    default: .
+  out:
+    description: Site output directory outside the course repository
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate course policy and read shared pins
+      id: pins
+      shell: bash
+      env:
+        COURSE_REPO: ${{ inputs.course-repo }}
+      run: python3 "$GITHUB_ACTION_PATH/../../../publish.py" ci prepare --course-repo "$COURSE_REPO"
+    - name: Setup Python
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      with:
+        python-version: ${{ steps.pins.outputs.python_version }}
+    - name: Setup Node with npm cache
+      uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version: ${{ steps.pins.outputs.node_version }}
+        cache: npm
+        cache-dependency-path: ${{ github.action_path }}/../../../renderer/package-lock.json
+    - name: Cache Playwright browsers
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ steps.pins.outputs.browser_cache_key }}
+    - name: Install renderer dependencies
+      shell: bash
+      run: npm ci --prefix "$GITHUB_ACTION_PATH/../../../renderer" --no-audit --no-fund
+    - name: Install Playwright Chromium
+      shell: bash
+      run: npx --prefix "$GITHUB_ACTION_PATH/../../../renderer" playwright install chromium
+    - name: Course document validation and site build
+      shell: bash
+      env:
+        COURSE_REPO: ${{ inputs.course-repo }}
+        COURSE_SITE_OUT: ${{ inputs.out }}
+      run: python3 "$GITHUB_ACTION_PATH/../../../publish.py" ci --course-repo "$COURSE_REPO" --out "$COURSE_SITE_OUT"

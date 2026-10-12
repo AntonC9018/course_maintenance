@@ -82,6 +82,9 @@ BASE_CONFIG = {
     "root_lesson": "en/labs/common/01_computer_architecture.md",
     "peer_repositories": [],
 }
+BASE_CONFIG["slug_overrides"] = {"labs/cpp/test1.md": "cpp/labs/assessment-1"}
+BASE_CONFIG["navigation"] = {'group_labels': {'common': {'en': 'Common', 'ru': 'Общие темы'}, 'cpp': {'en': 'C++', 'ru': 'C++'}, 'dsa': {'en': 'Data Structures and Algorithms', 'ru': 'Структуры данных и алгоритмы'}, 'labs': {'en': 'Labs', 'ru': 'Лабораторные работы'}}, 'subject_order': ['common', 'cpp', 'dsa'], 'lab_prefixes': ['common/labs', 'cpp/labs', 'dsa/labs'], 'last_lessons': ['cpp/labs/assessment-1']}
+
 
 
 def write_config(root: Path, cfg=None):
@@ -809,7 +812,7 @@ class TestRoutesNavCompat(unittest.TestCase):
         from publishing.site import (astro_base, astro_site,
                                      generate_astro_config)
         self.per_locale = build_sidebars(self.nav, self.config)
-        self.lab_seqs = build_lab_sequences(self.nav)
+        self.lab_seqs = build_lab_sequences(self.nav, self.config)
         self.starlight_sidebar = build_starlight_sidebar(
             self.per_locale, self.config)
         # Same merge as run_site_build: SITE-3/4 roots + SITE-15 groups.
@@ -935,7 +938,7 @@ class TestRoutesNavCompat(unittest.TestCase):
 
     def test_lab_pagination_crosses_groups_assessment_last(self):
         from publishing.navigation import lab_pagination
-        pag = lab_pagination(self.nav)
+        pag = lab_pagination(self.nav, self.config)
         self.assertEqual(pag["en/common/labs/notes"]["next"],
                          "en/cpp/labs/first")
         cpp = [s for s in self.lab_seqs["en"] if "/cpp/labs/" in s]
@@ -987,7 +990,7 @@ class TestRoutesNavCompat(unittest.TestCase):
         # Matching prev/next pagination labels.
         from publishing.site import augment_projection_files
         aug = augment_projection_files(
-            self.files, self.nav, self.identity, self.root)
+            self.files, self.nav, self.identity, self.root, self.config)
         notes = aug["src/content/docs/en/common/labs/notes.md"]
         self.assertIn("21a. Appendix", notes)
         self.assertIn("1. First", notes)
@@ -1004,7 +1007,7 @@ class TestRoutesNavCompat(unittest.TestCase):
         # Per-page editUrl injected by site augmentation.
         from publishing.site import augment_projection_files
         aug = augment_projection_files(
-            self.files, self.nav, self.identity, self.root)
+            self.files, self.nav, self.identity, self.root, self.config)
         lab = aug["src/content/docs/en/common/labs/notes.md"]
         self.assertIn("editUrl:", lab)
         self.assertIn("/blob/master/en/labs/common/notes.md", lab)

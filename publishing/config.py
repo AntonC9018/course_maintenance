@@ -20,12 +20,15 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .options import CiOptions, DeploymentOptions, MaintenanceOptions, NavigationOptions, SmokeOptions, parse_options
+
 CONFIG_FILENAME = "course-publishing.json"
 
 ALLOWED_TOP_FIELDS = frozenset({
     "version", "default_language", "languages", "exclude",
     "route_sections", "site_title", "root_lesson", "peer_repositories",
 })
+OPTIONAL_TOP_FIELDS = frozenset({"ci", "deployment", "smoke", "navigation", "slug_overrides", "backlink_labels", "maintenance"})
 ALLOWED_LANGUAGE_FIELDS = frozenset({"code", "root", "label"})
 ALLOWED_ROUTE_FIELDS = frozenset({"source", "destination"})
 
@@ -163,6 +166,13 @@ class PublishingConfig:
     peer_repositories: tuple[str, ...]
     source_path: Path = field(compare=False)
     course_repo: Path = field(compare=False)
+    ci: CiOptions = field(default_factory=CiOptions)
+    deployment: DeploymentOptions = field(default_factory=DeploymentOptions)
+    smoke: SmokeOptions = field(default_factory=SmokeOptions)
+    navigation: NavigationOptions = field(default_factory=NavigationOptions)
+    slug_overrides: dict[str, str] = field(default_factory=dict)
+    backlink_labels: dict[str, str] = field(default_factory=dict)
+    maintenance: MaintenanceOptions = field(default_factory=MaintenanceOptions)
 
     def roots(self) -> dict[str, str]:
         return {l.code: l.root for l in self.languages}
@@ -195,11 +205,11 @@ def load_config(course_repo: Path | str) -> PublishingConfig:
     if not isinstance(raw, dict):
         raise _fail("top-level JSON must be an object", path=cfg_path)
 
-    unknown = set(raw) - set(ALLOWED_TOP_FIELDS)
+    unknown = set(raw) - (ALLOWED_TOP_FIELDS | OPTIONAL_TOP_FIELDS)
     if unknown:
         raise _fail(
             f"unknown field(s) {sorted(unknown)}; "
-            f"allowed: {sorted(ALLOWED_TOP_FIELDS)}",
+            f"allowed: {sorted(ALLOWED_TOP_FIELDS | OPTIONAL_TOP_FIELDS)}",
             path=cfg_path)
     missing = set(ALLOWED_TOP_FIELDS) - set(raw)
     if missing:
@@ -424,6 +434,11 @@ def load_config(course_repo: Path | str) -> PublishingConfig:
                 path=cfg_path)
         peers.append(norm)
 
+    try:
+        ci, deployment, smoke, navigation, slug_overrides, backlink_labels, maintenance = parse_options(raw, repo, codes)
+    except ValueError as exc:
+        raise _fail(str(exc), path=cfg_path) from exc
+
     return PublishingConfig(
         version=1,
         default_language=default,
@@ -435,4 +450,11 @@ def load_config(course_repo: Path | str) -> PublishingConfig:
         peer_repositories=tuple(peers),
         source_path=cfg_path,
         course_repo=repo,
+        ci=ci,
+        deployment=deployment,
+        smoke=smoke,
+        navigation=navigation,
+        slug_overrides=slug_overrides,
+        backlink_labels=backlink_labels,
+        maintenance=maintenance,
     )

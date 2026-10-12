@@ -48,3 +48,10 @@ It replaces the old per-task scripts (`rename_files.py`, `fix_files.py`,
   never the live repo): `--check` output must be empty-stable on the
   second run, and the first run's rename plan must match the old scripts'
   `--dry` output for directories without lettered files.
+
+## Course formatting policy
+
+Read `maintenance.heading_numbering` in the course’s `course-publishing.json`.
+`section` restarts numbered H3 examples after each H2; `document` continues
+through the whole document. CI and `maintain.py --root <course-repo>` honor
+the same policy; the default when no course configuration exists is `section`.

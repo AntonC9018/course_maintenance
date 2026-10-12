@@ -93,16 +93,16 @@ def is_valid_slug(slug: str, language: str) -> bool:
     return True
 
 
-def _label_for(lang: str) -> str:
-    return RU_LABEL if lang == "ru" else EN_LABEL
+def _label_for(lang: str, labels=None) -> str:
+    return (labels or {}).get(lang, RU_LABEL if lang == "ru" else EN_LABEL)
 
 
 def expected_backlink_url(pages_url: str, slug: str) -> str:
     return f"{pages_url.rstrip('/')}/{slug.strip('/')}/"
 
 
-def expected_backlink_block(lang: str, slug: str, pages_url: str) -> str:
-    label = _label_for(lang)
+def expected_backlink_block(lang: str, slug: str, pages_url: str, labels=None) -> str:
+    label = _label_for(lang, labels)
     url = expected_backlink_url(pages_url, slug)
     return f"{BACKLINK_START}\n[{label}]({url})\n{BACKLINK_END}\n"
 
@@ -209,8 +209,10 @@ def _longest_route_match(after_root: str, route_sections) -> tuple[str, str] | N
 
 
 def expected_slug_for(after_root: str, language: str,
-                      route_sections, is_index: bool) -> str:
+                      route_sections, is_index: bool, slug_overrides=None) -> str:
     """Derive the canonical slug for a lesson without frontmatter (META-1..3)."""
+    if slug_overrides and after_root in slug_overrides:
+        return language + "/" + slug_overrides[after_root]
     m = _longest_route_match(after_root, route_sections)
     if m is not None:
         src, dst = m
@@ -230,17 +232,11 @@ def expected_slug_for(after_root: str, language: str,
         file_stem = file_part
     slug_dirs: list[str] = []
     for d in dir_parts:
-        if d.casefold() == "05a_programming_fundamentals":
-            slug_dirs.append("advanced-programming-fundamentals")
-        else:
-            slug_dirs.append(slugify_component(d))
+        slug_dirs.append(slugify_component(d))
     if is_index:
         comps = slug_dirs
     else:
-        if after_root == "labs/cpp/test1.md":
-            file_slug = "assessment-1"
-        else:
-            file_slug = slugify_component(file_stem)
+        file_slug = slugify_component(file_stem)
         comps = slug_dirs + [file_slug]
     if not comps:
         return language
@@ -337,7 +333,7 @@ def _remove_backlink_blocks(body_lines: list[str]) -> list[str]:
 
 
 def build_new_text(original: str, final_slug: str, lang: str,
-                   pages_url: str, slug_missing: bool) -> str:
+                   pages_url: str, slug_missing: bool, labels=None) -> str:
     """Return the fully regenerated file text (frontmatter + one backlink)."""
     has_fm, fm_end, fm_lines, rest_lines, _all = split_frontmatter(original)
     if not has_fm:
@@ -348,7 +344,7 @@ def build_new_text(original: str, final_slug: str, lang: str,
         fm_lines = _insert_slug_into_frontmatter(fm_lines, final_slug)
     # else: keep fm_lines untouched (never modify existing valid slug)
     clean_body = _remove_backlink_blocks(rest_lines)
-    block = expected_backlink_block(lang, final_slug, pages_url)
+    block = expected_backlink_block(lang, final_slug, pages_url, labels)
     fm_text = "\n".join(fm_lines) + "\n"
     body_text = "\n".join(clean_body)
     # block already ends with \n; preserve author's body verbatim (including
@@ -365,7 +361,7 @@ def build_new_text(original: str, final_slug: str, lang: str,
 
 
 def validate_backlink(lines: list[str], lang: str, slug: str,
-                      pages_url: str):
+                      pages_url: str, labels=None):
     """Validate the single required backlink block. Returns error str or None.
 
     Checks (META-6/7): exactly one block, immediately after frontmatter,
@@ -393,9 +389,9 @@ def validate_backlink(lines: list[str], lang: str, slug: str,
     if not m:
         return "malformed backlink block (middle line is not a Markdown link)"
     label, url = m.group(1), m.group(2)
-    if label != _label_for(lang):
+    if label != _label_for(lang, labels):
         return (f"malformed backlink label {label!r} "
-                f"(expected {_label_for(lang)!r})")
+                f"(expected {_label_for(lang, labels)!r})")
     want = expected_backlink_url(pages_url, slug)
     if url != want:
         return f"stale backlink URL {url!r} (expected {want!r})"
@@ -417,7 +413,7 @@ def _regen_hint(course_repo: Path) -> str:
 
 
 def collect_metadata_state(course_repo: Path, config, inventory,
-                           pages_url: str):
+                           pages_url: str, labels=None):
     """Two-phase collection: final slugs + per-file errors (no writes).
 
     Returns (final_slugs: dict repo_rel->slug, errors: list[str],
@@ -458,7 +454,7 @@ def collect_metadata_state(course_repo: Path, config, inventory,
             after = rel[len(root) + 1:] if rel.startswith(root + "/") else rel
             try:
                 gen = expected_slug_for(after, lang, config.route_sections,
-                                        rel in elected)
+                                        rel in elected, config.slug_overrides)
             except MetadataError as exc:
                 errors.append(f"{rel}: [{exc.rule}] {exc}; "
                               f"{_regen_hint(course_repo)}")
@@ -515,7 +511,7 @@ def validate_all_metadata(course_repo: Path, config, inventory,
             errs.append(f"{rel}: [META-7] cannot read lesson ({exc}); {hint}")
             continue
         prob = validate_backlink(text.splitlines(), lesson.language,
-                                 final[rel], pages_url)
+                                 final[rel], pages_url, config.backlink_labels)
         if prob is not None:
             errs.append(f"{rel}: [META-7] {prob}; {hint}")
     # `collect` derives missing slugs without erroring; for the read-only
@@ -547,7 +543,7 @@ def run_metadata_generate(course_repo: Path, args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     try:
-        identity = infer_identity(repo)
+        identity = infer_identity(repo, config)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -580,7 +576,7 @@ def run_metadata_generate(course_repo: Path, args) -> int:
             return 1
         slug_missing = rel in missing
         new_text = build_new_text(original, final[rel], lesson.language,
-                                  identity.pages_url, slug_missing)
+                                  identity.pages_url, slug_missing, config.backlink_labels)
         if new_text != original:
             planned.append((lesson.source_path, new_text))
 

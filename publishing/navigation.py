@@ -1,83 +1,39 @@
-"""Starlight navigation data (SITE-2..SITE-16, issue #11).
+"""Deterministic course navigation and lab pagination.
 
-Pure, stdlib-only helpers for locale-prefixed routes, redirects, sidebar
-generation, lab pagination, GitHub source links, Pagefind and base path.
-No filesystem writes and no npm invocation here; orchestration lives in
-:mod:`publishing.site`.
+Course policy (group translations, subject order, lab route prefixes,
+last lessons, and UI labels) comes from config.navigation. Unconfigured
+routes use humanized labels and the generic subject/labs or labs/section
+conventions. Numbered lab sections follow their source-directory order.
 
-Sidebar model (per locale, snapshot-friendly):
+Sidebar construction and group redirects share child ordering so their
+first-lesson targets agree. Index titles take precedence over configured
+group labels. Lab sequences cross sidebar groups; only lab pages receive
+explicit prev/next links. Starlight merges per-locale trees with translated
+labels while preserving locale-only lessons.
 
-- link: ``{"label": str, "slug": full_slug}`` where full_slug includes the
-  language prefix (``en/...``), matching ``nav.json`` slugs and
-  ``src/content/docs/<slug>.md`` projection paths. Numbered lab lessons
-  (SITE-16) carry a prefixed label ``"{n}. {title}"``; all other lessons
-  carry their plain title.
-- group: ``{"label": str, "collapsed": True, "items": [...]}`` (never
-  clickable, never synthetic; SITE-10). Indexless groups additionally get
-  an Astro redirect to their first descendant lesson (SITE-15;
-  :func:`get_group_redirects`); a redirect is not a listing page and
-  generates no content.
-
-Starlight conversion (``to_starlight_sidebar``) strips the language prefix
-(Starlight slugs exclude the locale directory) and adds ``translations``
-for group labels, index Overview links and lab lesson links (SITE-16).
-Lab links use explicit ``{"slug": rest, "label": ...}`` so the
-source-number prefix shows to the left of the label using only the label
-string (no badge/CSS, SITE-5); ordinary non-lab lesson links use
-``{"slug": rest}`` without an explicit label so Starlight renders the
-per-locale frontmatter title automatically.
-
-Ordering (SITE-9): direct child lessons reuse projection ``order``
-(numeric incl lettered ``21a`` first, unnumbered alphabetical last).
-Unelected ``index/README/doc`` lessons follow the index link in precedence
-``index > README > doc`` (SITE-7). Subgroups follow lessons: lab-only
-subgroups whose lessons live in numbered source directories (e.g.
-``1_basic/``) sort by that number first (repo order); all other
-subgroups sort by label (fixed/humanized/index-title) for determinism.
-Top-level subject groups use the fixed order Common, C++, DSA; other
-top-level segments follow alphabetically.
-
-Groups (SITE-7/10): a group whose rest path equals an index lesson slug
-uses that lesson title as its label; its lesson appears first as
-``Overview``/``Обзор``. Other groups use fixed SITE-6 labels for
-``common/cpp/dsa/labs`` or humanized segments otherwise. All groups are
-``collapsed: True`` (SITE-8); highlighting/expansion/scroll remain
-Starlight defaults (no custom code).
-
-Labs (SITE-11): ``is_lab_slug`` matches ``/{lang}/{subject}/labs/...``
-(subject first) and ``/{lang}/labs/{section}/...`` (labs first); both
-need at least four segments so bare ``labs`` groups never qualify.
-``lab_subject`` returns the subject/section segment (parts[1] for
-subject-first, the segment right after ``labs`` for labs-first).
-Per-locale lab sequences order Common, C++, DSA subjects; other
-subjects with numbered source dirs (see below) follow in repo order,
-remaining subjects alphabetically; within a lab group numbered labs
-use projection order and unnumbered follow alphabetically;
-``assessment-1`` is last among C++ labs. Lab pages get explicit
-prev/next; non-lab pages use sidebar-order pagination (no frontmatter
-overrides).
-
-Lab numbers (SITE-16): numbered lab lessons display their source-file
-ordering number to the left of the sidebar label as ``"{n}. {title}"``
-(plain integer, no zero-padding, lettered ``21a`` kept as-is, single
-space after the dot; number parsed from the source filename via
-``maintenance.rename.parse_ordered``, display uses the author's source
-number even with gaps, never the global sequence position).
-Unnumbered labs and non-labs keep their plain title; Overview index links
-keep ``Overview``/``Обзор``; group labels unchanged.
+Logical redirects omit the configured site base; the renderer adds it.
+Root redirects require the configured root lesson's committed slug.
 """
 
 from __future__ import annotations
 
 import urllib.parse
 
-FIXED_LABELS: dict[str, dict[str, str]] = {
-    "common": {"en": "Common", "ru": "Общие темы"},
-    "cpp": {"en": "C++", "ru": "C++"},
-    "dsa": {"en": "Data Structures and Algorithms",
-            "ru": "Структуры данных и алгоритмы"},
-    "labs": {"en": "Labs", "ru": "Лабораторные работы"},
-}
+from .options import NavigationOptions
+
+
+def navigation_options(config=None):
+    return getattr(config, "navigation", NavigationOptions())
+
+
+def index_label(lang, config=None):
+    return navigation_options(config).index_labels.get(
+        lang, INDEX_LINK_LABELS.get(lang, "Overview"))
+
+
+def source_label(lang, config=None):
+    return navigation_options(config).source_labels.get(
+        lang, VIEW_ON_GITHUB_LABELS.get(lang, "View on GitHub"))
 
 INDEX_LINK_LABELS: dict[str, str] = {"en": "Overview", "ru": "Обзор"}
 
@@ -86,8 +42,6 @@ VIEW_ON_GITHUB_LABELS: dict[str, str] = {
     "ru": "Посмотреть на GitHub",
 }
 
-LAB_SUBJECT_ORDER = ("common", "cpp", "dsa")
-TOP_SUBJECT_ORDER = ("common", "cpp", "dsa")
 
 _UNELECTED_PRECEDENCE = {"index.md": 0, "readme.md": 1, "doc.md": 2}
 
@@ -118,28 +72,38 @@ def lang_of_slug(slug: str) -> str:
     return slug.strip("/").split("/")[0] if slug.strip("/") else ""
 
 
-def is_lab_slug(slug: str) -> bool:
+def is_lab_slug(slug: str, config=None) -> bool:
     """A lab page matches ``/{lang}/{subject}/labs/...`` or
     ``/{lang}/labs/{section}/...`` (SITE-11)."""
+    prefixes = navigation_options(config).lab_prefixes
+    if prefixes:
+        rest = strip_lang(slug)
+        return any(rest.startswith(prefix + "/") for prefix in prefixes)
     parts = slug.strip("/").split("/")
     return len(parts) >= 4 and (parts[2] == "labs" or parts[1] == "labs")
 
 
-def lab_subject(slug: str) -> str | None:
+def lab_subject(slug: str, config=None) -> str | None:
     """Subject/section segment of a lab slug (SITE-11).
 
     Subject-first layout returns parts[1]; labs-first layout returns
     the section right after ``labs`` (parts[2]).
     """
-    if not is_lab_slug(slug):
+    if not is_lab_slug(slug, config):
         return None
+    prefixes = navigation_options(config).lab_prefixes
+    if prefixes:
+        rest = strip_lang(slug)
+        prefix = max((p for p in prefixes if rest.startswith(p + "/")), key=len)
+        parts = prefix.split("/")
+        return parts[-2] if parts[-1] == "labs" and len(parts) > 1 else parts[-1]
     parts = slug.strip("/").split("/")
     if parts[2] == "labs":
         return parts[1]
     return parts[2]
 
 
-def _entries_section_number(entries: list[dict]) -> int | None:
+def _entries_section_number(entries: list[dict], config=None) -> int | None:
     """Repo-order number shared by lab entries, else None.
 
     When every entry is a lab page whose source file lives directly in
@@ -154,7 +118,7 @@ def _entries_section_number(entries: list[dict]) -> int | None:
         return None
     numbers = []
     for e in entries:
-        if not is_lab_slug(e.get("slug", "")):
+        if not is_lab_slug(e.get("slug", ""), config):
             return None
         parent = e.get("source", "").rpartition("/")[0].rpartition("/")[2]
         parsed = parse_ordered(parent) if parent else None
@@ -192,7 +156,7 @@ def lab_number_prefix(source: str) -> str | None:
     return prefix
 
 
-def lab_display_label(slug: str, source: str, title: str) -> str:
+def lab_display_label(slug: str, source: str, title: str, config=None) -> str:
     """Display label for SITE-16: numbered labs prefixed, else plain.
 
     Only lab pages (SITE-11 slugs) whose source filename carries an
@@ -200,7 +164,7 @@ def lab_display_label(slug: str, source: str, title: str) -> str:
     non-lab lessons keep their plain title. Overview index links are
     handled by the caller (never passed here).
     """
-    if not is_lab_slug(slug):
+    if not is_lab_slug(slug, config):
         return title
     prefix = lab_number_prefix(source)
     if prefix is None:
@@ -210,12 +174,14 @@ def lab_display_label(slug: str, source: str, title: str) -> str:
 
 def get_base(identity) -> str:
     """GitHub Pages project base, e.g. ``/my-repo/`` (SITE-2)."""
-    return f"/{identity.repo}/"
+    path = urllib.parse.urlsplit(identity.pages_url).path
+    return path.rstrip("/") + "/"
 
 
 def get_site_and_base(identity) -> tuple[str, str]:
     """Return (site, base) for Astro config (SITE-2)."""
-    site = f"https://{identity.owner}.github.io"
+    parsed = urllib.parse.urlsplit(identity.pages_url)
+    site = f"{parsed.scheme}://{parsed.netloc}"
     return site, get_base(identity)
 
 
@@ -240,15 +206,7 @@ def get_redirects(config, final_slugs: dict[str, str]) -> dict[str, str]:
     root_rel = config.root_lesson
     root_slug = final_slugs.get(root_rel)
     if root_slug is None:
-        # Fall back to the spec default when the root lesson has no slug
-        # (callers validate metadata first; this keeps --check messages
-        # actionable rather than crashing).
-        default = getattr(config, "default_language", "en")
-        rest = "common/labs/computer-architecture"
-        out = {"/": f"/{default}/{rest}/"}
-        for lang in [l.code for l in config.languages]:
-            out[f"/{lang}/"] = f"/{lang}/{rest}/"
-        return out
+        raise ValueError(f"{config.root_lesson}: missing root lesson slug; operation: metadata generate")
     parts = root_slug.strip("/").split("/")
     rest = "/".join(parts[1:]) if len(parts) > 1 else ""
     out: dict[str, str] = {}
@@ -291,21 +249,21 @@ def get_group_redirects(nav: list[dict], config) -> dict[str, str]:
             if group_rest in rest_to_entry:
                 continue  # indexed group serves its lesson.
             target = _first_descendant_slug(
-                group_rest, rest_to_entry, lang, all_groups)
+                group_rest, rest_to_entry, lang, all_groups, config)
             if target is not None:
                 out[f"/{lang}/{group_rest}/"] = f"/{target}/"
     return dict(sorted(out.items()))
 
 
 def _first_descendant_slug(group_rest: str, rest_to_entry: dict,
-                           lang: str, all_groups: set[str]) -> str | None:
+                           lang: str, all_groups: set[str], config=None) -> str | None:
     """First lesson slug below a group in sidebar order (SITE-15)."""
     lessons, subgroups = _ordered_children(
-        group_rest, rest_to_entry, lang, all_groups)
+        group_rest, rest_to_entry, lang, all_groups, config)
     if lessons:
         return lessons[0]["slug"]
     for sub in subgroups:
-        hit = _first_descendant_slug(sub, rest_to_entry, lang, all_groups)
+        hit = _first_descendant_slug(sub, rest_to_entry, lang, all_groups, config)
         if hit is not None:
             return hit
     return None
@@ -371,7 +329,7 @@ def _split_direct_lessons(group_rest: str, rest_to_entry: dict
 
 
 def _ordered_children(group_rest: str, rest_to_entry: dict, lang: str,
-                      all_groups: set[str]
+                      all_groups: set[str], config=None
                       ) -> tuple[list[dict], list[str]]:
     """Direct lessons + subgroups of a group in sidebar order (SITE-7/9).
 
@@ -392,10 +350,10 @@ def _ordered_children(group_rest: str, rest_to_entry: dict, lang: str,
     numbered: list = []
     plain: list = []
     for g in sub_paths:
-        label = group_label(g, rest_to_entry, lang)
+        label = group_label(g, rest_to_entry, lang, config)
         members = [e for r, e in rest_to_entry.items()
                    if r == g or r.startswith(g + "/")]
-        num = _entries_section_number(members)
+        num = _entries_section_number(members, config)
         if num is None:
             plain.append((label.casefold(), label, g))
         else:
@@ -444,11 +402,11 @@ def build_sidebars(nav: list[dict], config) -> dict[str, list]:
 
     out: dict[str, list] = {}
     for lang in langs:
-        out[lang] = _build_one_locale(by_lang[lang], lang)
+        out[lang] = _build_one_locale(by_lang[lang], lang, config)
     return out
 
 
-def _build_one_locale(entries: list[dict], lang: str) -> list:
+def _build_one_locale(entries: list[dict], lang: str, config=None) -> list:
     rest_to_entry, all_groups = _locale_rest_map(entries)
 
     def build_group(group_rest: str) -> list:
@@ -457,13 +415,13 @@ def _build_one_locale(entries: list[dict], lang: str) -> list:
         # Direct lessons + subgroups in shared sidebar order (SITE-7/9;
         # same order SITE-15 redirect targets use).
         lessons, sub_paths = _ordered_children(
-            group_rest, rest_to_entry, lang, all_groups)
-        labelled = [(group_label(g, rest_to_entry, lang), g)
+            group_rest, rest_to_entry, lang, all_groups, config)
+        labelled = [(group_label(g, rest_to_entry, lang, config), g)
                     for g in sub_paths]
         items: list = []
         if index_entry is not None:
             items.append({
-                "label": INDEX_LINK_LABELS.get(lang, "Overview"),
+                "label": index_label(lang, config),
                 "slug": index_entry["slug"],
             })
         for e in lessons:
@@ -480,7 +438,7 @@ def _build_one_locale(entries: list[dict], lang: str) -> list:
             # index links above keep Overview/Обзор with no number.
             items.append({
                 "label": lab_display_label(
-                    e["slug"], e.get("source", ""), e.get("title", "")),
+                    e["slug"], e.get("source", ""), e.get("title", ""), config),
                 "slug": e["slug"],
             })
         for label, g in labelled:
@@ -492,10 +450,11 @@ def _build_one_locale(entries: list[dict], lang: str) -> list:
         return items
 
     # Top-level: fixed subject order, then others alphabetically.
+    subject_order = navigation_options(config).subject_order
     top_subs = sorted(
         {g.split("/")[0] for g in all_groups if g},
-        key=lambda s: (0, TOP_SUBJECT_ORDER.index(s))
-        if s in TOP_SUBJECT_ORDER else (1, s.casefold(), s),
+        key=lambda s: (0, subject_order.index(s))
+        if s in subject_order else (1, s.casefold(), s),
     )
     # Ensure fixed subjects appear even when empty? Only include groups
     # that actually exist (no synthetic listing, SITE-10).
@@ -504,62 +463,62 @@ def _build_one_locale(entries: list[dict], lang: str) -> list:
         if sub not in all_groups:
             continue
         sidebar.append({
-            "label": group_label(sub, rest_to_entry, lang),
+            "label": group_label(sub, rest_to_entry, lang, config),
             "collapsed": True,
             "items": build_group(sub),
         })
     return sidebar
 
 
-def group_label(group_rest: str, rest_to_entry: dict, lang: str) -> str:
+def group_label(group_rest: str, rest_to_entry: dict, lang: str, config=None) -> str:
     """Label for a group path (SITE-6/SITE-7)."""
     index = rest_to_entry.get(group_rest)
     if index is not None and index.get("title"):
         return index["title"]
     seg = group_rest.split("/")[-1] if group_rest else ""
-    if seg in FIXED_LABELS:
-        return FIXED_LABELS[seg].get(lang, FIXED_LABELS[seg].get("en", seg))
+    labels = navigation_options(config).group_labels
+    translated = labels.get(group_rest, labels.get(seg, {}))
+    if lang in translated:
+        return translated[lang]
     return humanize_segment(seg)
 
 
-def build_lab_sequences(nav: list[dict]) -> dict[str, list[str]]:
+def build_lab_sequences(nav: list[dict], config=None) -> dict[str, list[str]]:
     """One lab slug sequence per locale (SITE-11).
 
-    Common, C++, DSA subjects in order; numbered by projection order,
-    unnumbered after alphabetically (projection order already encodes
-    this); Assessment 1 last among C++ labs.
+    Configured subjects first, then source-numbered/name order; configured
+    last_lessons follow the other lessons within their subject.
     """
     by_lang: dict[str, list[dict]] = {}
     for e in nav:
-        if is_lab_slug(e.get("slug", "")):
+        if is_lab_slug(e.get("slug", ""), config):
             by_lang.setdefault(e["lang"], []).append(e)
     out: dict[str, list[str]] = {}
     for lang, entries in by_lang.items():
         by_subject: dict[str, list[dict]] = {}
         for e in entries:
-            by_subject.setdefault(lab_subject(e["slug"]) or "", []).append(e)
+            by_subject.setdefault(lab_subject(e["slug"], config) or "", []).append(e)
 
         def sort_key(e: dict):
             slug = e["slug"]
-            last = slug.strip("/").split("/")[-1]
-            is_assessment = (
-                lab_subject(slug) == "cpp" and last == "assessment-1")
-            return (1 if is_assessment else 0,
+            is_last = strip_lang(slug) in navigation_options(config).last_lessons
+            return (1 if is_last else 0,
                     e.get("order", 0), slug)
 
+        subject_order = navigation_options(config).subject_order
         seq: list[str] = []
-        for subj in LAB_SUBJECT_ORDER:
+        for subj in subject_order:
             members = sorted(by_subject.get(subj, []), key=sort_key)
             seq.extend(m["slug"] for m in members)
 
         def others_key(s: str):
-            num = _entries_section_number(by_subject[s])
+            num = _entries_section_number(by_subject[s], config)
             if num is None:
                 return (1, 0, s.casefold())
             return (0, num, s.casefold())
 
         others = sorted(
-            (s for s in by_subject if s not in LAB_SUBJECT_ORDER),
+            (s for s in by_subject if s not in subject_order),
             key=others_key)
         for subj in others:
             members = sorted(by_subject[subj], key=sort_key)
@@ -568,13 +527,13 @@ def build_lab_sequences(nav: list[dict]) -> dict[str, list[str]]:
     return out
 
 
-def lab_pagination(nav: list[dict]) -> dict[str, dict]:
+def lab_pagination(nav: list[dict], config=None) -> dict[str, dict]:
     """Explicit prev/next slugs for lab pages (SITE-11).
 
     Returns ``{slug: {"prev": slug|None, "next": slug|None}}``. Non-lab
     slugs are absent (sidebar-order pagination).
     """
-    seqs = build_lab_sequences(nav)
+    seqs = build_lab_sequences(nav, config)
     out: dict[str, dict] = {}
     for _lang, seq in seqs.items():
         for i, slug in enumerate(seq):
@@ -660,7 +619,7 @@ def build_starlight_sidebar(per_locale: dict[str, list],
         for n in nodes:
             if "slug" in n:
                 rest = strip_lang(n["slug"])
-                if n.get("label") in (INDEX_LINK_LABELS.get(default),
+                if n.get("label") in (index_label(default, config),
                                       "Overview"):
                     item: dict = {"slug": rest, "label": n["label"]}
                     trans = {}
@@ -669,11 +628,11 @@ def build_starlight_sidebar(per_locale: dict[str, list],
                         if c is not None:
                             trans[lang] = c.get(
                                 "label",
-                                INDEX_LINK_LABELS.get(lang, "Обзор"))
+                                index_label(lang, config))
                     if trans:
                         item["translations"] = trans
                     result.append(item)
-                elif is_lab_slug(n["slug"]):
+                elif is_lab_slug(n["slug"], config):
                     # SITE-16: explicit lab labels (numbered prefixed,
                     # unnumbered plain) with per-locale translations.
                     item = {"slug": rest, "label": n["label"]}
@@ -735,7 +694,7 @@ def build_starlight_sidebar(per_locale: dict[str, list],
     for rest in sorted(extras):
         labels = extras[rest]
         # Lab rest check via a dummy language prefix (SITE-11 shape).
-        if is_lab_slug(f"{default}/{rest}"):
+        if is_lab_slug(f"{default}/{rest}", config):
             # Deterministic label: first other locale in config order.
             ordered_langs = [l for l in others if l in labels]
             first_lang = ordered_langs[0] if ordered_langs else sorted(

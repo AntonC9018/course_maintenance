@@ -50,6 +50,9 @@ BASE_CONFIG = {
     "root_lesson": "en/labs/common/01_computer_architecture.md",
     "peer_repositories": [],
 }
+BASE_CONFIG["slug_overrides"] = {"labs/cpp/test1.md": "cpp/labs/assessment-1"}
+BASE_CONFIG["route_sections"].append({"source": "05a_programming_fundamentals", "destination": "advanced-programming-fundamentals"})
+
 
 
 def write_config(root: Path, cfg=None):

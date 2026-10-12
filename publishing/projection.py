@@ -899,7 +899,7 @@ def run_projection_build(course_repo: Path, args) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     try:
-        identity = infer_identity(repo)
+        identity = infer_identity(repo, config)
     except Exception as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

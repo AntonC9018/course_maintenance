@@ -58,6 +58,9 @@ BASE_CONFIG = {
     "root_lesson": "en/labs/common/01_computer_architecture.md",
     "peer_repositories": [],
 }
+BASE_CONFIG["slug_overrides"] = {"labs/cpp/test1.md": "cpp/labs/assessment-1"}
+BASE_CONFIG["navigation"] = {'group_labels': {'common': {'en': 'Common', 'ru': 'Общие темы'}, 'cpp': {'en': 'C++', 'ru': 'C++'}, 'dsa': {'en': 'Data Structures and Algorithms', 'ru': 'Структуры данных и алгоритмы'}, 'labs': {'en': 'Labs', 'ru': 'Лабораторные работы'}}, 'subject_order': ['common', 'cpp', 'dsa'], 'lab_prefixes': ['common/labs', 'cpp/labs', 'dsa/labs'], 'last_lessons': ['cpp/labs/assessment-1']}
+
 
 
 def write_config(root: Path, cfg=None):
@@ -167,7 +170,7 @@ class TestHumanize(unittest.TestCase):
 
 class TestFixedLabels(unittest.TestCase):
     def test_fixed_labels_both_locales(self):
-        from publishing.navigation import FIXED_LABELS
+        FIXED_LABELS = BASE_CONFIG["navigation"]["group_labels"]
         self.assertEqual(FIXED_LABELS["common"]["en"], "Common")
         self.assertEqual(FIXED_LABELS["common"]["ru"], "Общие темы")
         self.assertEqual(FIXED_LABELS["cpp"]["en"], "C++")
@@ -353,7 +356,7 @@ class TestLabSequence(unittest.TestCase):
 
     def test_lab_order_common_cpp_dsa(self):
         from publishing.navigation import build_lab_sequences
-        seqs = build_lab_sequences(self.nav)
+        seqs = build_lab_sequences(self.nav, self.config)
         en = seqs["en"]
         # Common labs first (numeric then alpha), then C++, then DSA.
         self.assertEqual(en[:4], [
@@ -380,7 +383,7 @@ class TestLabSequence(unittest.TestCase):
 
     def test_assessment_last_despite_alpha(self):
         from publishing.navigation import build_lab_sequences
-        seqs = build_lab_sequences(self.nav)
+        seqs = build_lab_sequences(self.nav, self.config)
         cpp = [s for s in seqs["en"] if "/cpp/labs/" in s]
         # 'assessment-1' starts with 'a' (would sort first alphabetically
         # among unnumbered) but must be last.
@@ -388,7 +391,7 @@ class TestLabSequence(unittest.TestCase):
 
     def test_lab_pagination_crosses_groups(self):
         from publishing.navigation import lab_pagination
-        pag = lab_pagination(self.nav)
+        pag = lab_pagination(self.nav, self.config)
         # Boundary Common->C++.
         self.assertEqual(pag["en/common/labs/notes"]["next"],
                          "en/cpp/labs/first")
@@ -407,7 +410,7 @@ class TestLabSequence(unittest.TestCase):
     def test_augment_injects_lab_prev_next_and_editurl(self):
         from publishing.site import augment_projection_files
         augmented = augment_projection_files(
-            self.files, self.nav, self.identity, self.root)
+            self.files, self.nav, self.identity, self.root, self.config)
         lab_rel = "src/content/docs/en/common/labs/notes.md"
         self.assertIn("prev:", augmented[lab_rel])
         self.assertIn("next:", augmented[lab_rel])
@@ -868,7 +871,9 @@ class TestLabNumberDisplay(unittest.TestCase):
         from types import SimpleNamespace
         from publishing.navigation import build_sidebars
         lang = SimpleNamespace(code="ru")
-        config = SimpleNamespace(languages=[lang])
+        from publishing.options import NavigationOptions
+        config = SimpleNamespace(languages=[lang], navigation=NavigationOptions(
+            group_labels={"labs": {"ru": "Лабораторные работы"}}))
         nav = [
             {"slug": "ru/labs/design/field-mask", "title": "Field Mask",
              "lang": "ru", "source": "labs/2_design/01_field_mask.md",
@@ -1005,7 +1010,7 @@ class TestLabNumberDisplay(unittest.TestCase):
     def test_prev_next_labels_match_sidebar(self):
         from publishing.site import augment_projection_files
         aug = augment_projection_files(
-            self.files, self.nav, self.identity, self.root)
+            self.files, self.nav, self.identity, self.root, self.config)
         notes = aug["src/content/docs/en/common/labs/notes.md"]
         # Prev is 21a appendix, next crosses to first C++ lab.
         self.assertIn("21a. Appendix", notes)
