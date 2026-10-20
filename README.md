@@ -31,3 +31,7 @@ GitHub triggers, permissions, artifact upload, and deployment.
 Maintenance preserves the fixed order rename → convert → headings →
 links. Preview before applying; follow `AGENTS.md`. Tests use isolated
 temporary course fixtures and do not mutate real course sources.
+
+Visualization rendering is local-only. The pinned Manim/LaTeX toolchain and
+its headless proof live in `visualizations/README.md`; CI never installs or
+runs it.
