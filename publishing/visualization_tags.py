@@ -11,7 +11,10 @@ CPP_LANGUAGES = frozenset({'cpp', 'c++', 'cxx'})
 ASSET_URL = re.compile(r'https://github\.com/user-attachments/assets/[A-Za-z0-9-]+\Z')
 _OPEN_FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})([^\n]*)$')
 _DETAILS = re.compile(r'</?details\b[^>]*>|<visualization\b[^>]*>', re.IGNORECASE)
-_EMBED = re.compile(r'\s*(?:<video\b[^>]*>\s*</video>|<img\b[^>]*>)', re.DOTALL)
+_EMBED = re.compile(
+    r'\s*(?:<video\b[^>]*>\s*</video>|<img\b[^>]*>|'
+    r'https://github\.com/user-attachments/assets/[A-Za-z0-9-]+(?=[ \t]*(?:\r?\n|$)))',
+    re.DOTALL)
 
 
 def normalize_source(source: str) -> str:
@@ -197,9 +200,22 @@ def render_marker(tag: Tag, src: str) -> str:
     attributes = f'type="{tag.type}"'
     if tag.template != 'expression-timeline':
         attributes += f' template="{tag.template}"'
-    marker = f'<!-- <visualization {attributes}\n     src="{escape(src, quote=True)}"> -->'
+    marker = f'<!-- <visualization {attributes}\n     src="{escape(src, quote=True)}" /> -->'
     if tag.type == 'animation':
-        embed = f'<video controls\n  src="{escape(src, quote=True)}"></video>'
+        # GitHub only resolves a bare attachment to its CSP-approved media host.
+        # A raw video keeps github.com as its src and is blocked before redirecting.
+        return marker + '\n\n' + src
     else:
         embed = f'<img alt=""\n  src="{escape(src, quote=True)}">'
     return marker + '\n' + embed
+
+
+def project_visualizations(text: str) -> str:
+    """Turn managed attachment paragraphs into site players without changing sources."""
+    scanned = scan_document(text)
+    for tag in reversed(scanned.tags):
+        if tag.type == 'animation' and tag.src:
+            embed = ('\n\n<video controls preload="metadata"\n'
+                     f'  src="{escape(tag.src, quote=True)}"></video>')
+            text = text[:tag.embed_start] + embed + text[tag.embed_end:]
+    return text

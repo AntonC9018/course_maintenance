@@ -66,6 +66,7 @@ from pathlib import Path
 from maintenance.patterns import FENCE_RE, ORDERED_PATTERN
 
 from .metadata import BACKLINK_END, BACKLINK_START, split_frontmatter
+from .visualization_tags import project_visualizations
 
 _FIX_PROJECTION = "operation: projection build"
 _ATX_RE = re.compile(r'^(\s{0,3})(#{1,6})(?:\s+(.*))?$')
@@ -712,7 +713,7 @@ def collect_projection_data(course_repo: Path, config, identity,
         else:
             combined = ('\n'.join(stripped) + '\n') if stripped else ''
         rewritten, file_copies, link_errors = rewrite_document(
-            lesson.source_path, combined, link_index)
+            lesson.source_path, project_visualizations(combined), link_index)
         for e in link_errors:
             errors.append(e)
         if link_errors:

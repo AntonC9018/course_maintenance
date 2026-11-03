@@ -38,7 +38,7 @@ a = 7;
 <details>
 <summary>Answer</summary>
 
-<!-- <visualization type="animation"> -->
+<!-- <visualization type="animation" /> -->
 
 </details>
 ````
@@ -50,14 +50,20 @@ The source is the nearest preceding code fence outside **all** `<details>` block
 also protect HTML-looking strings and comments inside code from changing answer nesting.
 
 After generation, maintenance fills `src` and inserts a managed media element immediately after
-that marker. Attribute wrapping keeps generated Markdown readable:
+that marker. The marker is self-closing metadata, not an HTML wrapper:
 
 ```html
 <!-- <visualization type="animation"
-     src="https://github.com/user-attachments/assets/00000000-0000-0000-0000-000000000000"> -->
-<video controls
-  src="https://github.com/user-attachments/assets/00000000-0000-0000-0000-000000000000"></video>
+     src="https://github.com/user-attachments/assets/00000000-0000-0000-0000-000000000000" /> -->
+
+https://github.com/user-attachments/assets/00000000-0000-0000-0000-000000000000
 ```
+
+GitHub resolves the bare attachment paragraph to its allowed media host. Raw `<video>` tags
+pointing at `github.com` are blocked by GitHub's `media-src` policy in repository documents.
+The site projection converts managed attachment paragraphs to `<video controls preload="metadata">`
+elements; authored documents keep the durable attachment URL. Neither signed media URLs nor
+rendered media belong in Git. Older markers and raw video embeds are accepted during migration.
 
 Static media uses `<img alt="" src="...">`. Generated media must remain language-neutral; English
 and Russian markers referencing identical C++ sources reuse one attachment. Source fences are
