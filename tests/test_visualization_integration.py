@@ -15,7 +15,7 @@ from publishing.visualization_assets import (
 from publishing.visualization_config import (
     VisualizationOptions, contained_path, parse_visualizations,
 )
-from publishing.visualization_tags import render_marker, scan_document
+from publishing.visualization_tags import project_visualizations, render_marker, scan_document
 
 URL = 'https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
 OTHER_URL = 'https://github.com/user-attachments/assets/ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee'
@@ -27,6 +27,33 @@ def document(source=SOURCE, marker='<!-- <visualization type="animation"> -->'):
 
 
 class SourceLookupTest(unittest.TestCase):
+    def test_github_attachment_paragraph_and_site_player_use_same_asset(self):
+        text = document()
+        tag = scan_document(text).tags[0]
+        managed = render_marker(tag, URL)
+        self.assertNotIn('<video', managed)
+        self.assertIn('" /> -->\n\n' + URL, managed)
+        text = text[:tag.start] + managed + text[tag.end:]
+        projected = project_visualizations(text)
+        self.assertIn('<video controls preload="metadata"', projected)
+        self.assertIn('src="' + URL + '"></video>', projected)
+        self.assertEqual(project_visualizations(projected), projected)
+        self.assertEqual(scan_document(text).errors, [])
+        self.assertEqual(text[scan_document(text).tags[0].start:
+                              scan_document(text).tags[0].embed_end], managed)
+
+    def test_projection_leaves_fenced_markers_and_unmanaged_urls_unchanged(self):
+        text = '```html\n' + document() + '\n```\n\n' + URL + '\n'
+        self.assertEqual(project_visualizations(text), text)
+
+    def test_legacy_video_embed_is_consumed_when_upgrading(self):
+        marker = f'<!-- <visualization type="animation" src="{URL}"> -->'
+        text = document(marker=marker + f'\n<video controls src="{URL}"></video>')
+        tag = scan_document(text).tags[0]
+        updated = text[:tag.start] + render_marker(tag, URL) + text[tag.embed_end:]
+        self.assertNotIn('<video', updated)
+        self.assertEqual(updated.count(URL), 2)
+
     def test_answer_code_and_fake_html_in_code_do_not_replace_source(self):
         text = ('```cpp\nint a{5}; // <details>\n```\n<details>\n'
                 '```cpp\nint fake{2};\n```\n<details>\n'
@@ -177,7 +204,8 @@ class GenerationTest(unittest.TestCase):
         self.assertEqual(len(self.uploads), 1)
         self.assertEqual(validate(self.root, self.config), [])
         body = (self.root / 'en/lab.md').read_text()
-        self.assertIn('<video controls', body)
+        self.assertNotIn('<video', body)
+        self.assertIn('\n\n' + URL + '\n', body)
         self.assertIn(URL, body)
 
     def test_source_and_renderer_changes_regenerate(self):
