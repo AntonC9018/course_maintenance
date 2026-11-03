@@ -181,8 +181,8 @@ class TestHeadingShift(unittest.TestCase):
         url = 'https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
         body = ('# Trace\n\n```cpp\nint a{5};\na = 7;\n```\n\n<details>\n'
                 '<summary>Execution trace</summary>\n\n'
-                f'<!-- <visualization type="animation" src="{url}" /> -->\n\n'
-                f'{url}\n\n</details>\n')
+                '<!-- <visualization type="animation"> -->\n\n'
+                f'{url}\n\n<!-- </visualization> -->\n\n</details>\n')
         projected = self._project_full(body, title='Trace')
         self.assertIn('<video controls preload="metadata"', projected)
         self.assertIn(f'src="{url}"></video>', projected)

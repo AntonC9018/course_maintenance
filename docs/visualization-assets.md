@@ -38,7 +38,9 @@ a = 7;
 <details>
 <summary>Answer</summary>
 
-<!-- <visualization type="animation" /> -->
+<!-- <visualization type="animation"> -->
+
+<!-- </visualization> -->
 
 </details>
 ````
@@ -49,24 +51,30 @@ The source is the nearest preceding code fence outside **all** `<details>` block
 `cpp`, `c++`, or `cxx`. A fence inside an answer cannot replace the source example. Markdown fences
 also protect HTML-looking strings and comments inside code from changing answer nesting.
 
-After generation, maintenance fills `src` and inserts a managed media element immediately after
-that marker. The marker is self-closing metadata, not an HTML wrapper:
+After generation, maintenance puts the attachment inside the paired visualization markers.
+The opening and closing tags are separate HTML comments, so GitHub can render the link between
+them. The URL appears once, in the body; no generated `src` attribute is needed:
 
 ```html
-<!-- <visualization type="animation"
-     src="https://github.com/user-attachments/assets/00000000-0000-0000-0000-000000000000" /> -->
+<!-- <visualization type="animation"> -->
 
 https://github.com/user-attachments/assets/00000000-0000-0000-0000-000000000000
+
+<!-- </visualization> -->
 ```
 
 GitHub resolves the bare attachment paragraph to its allowed media host. Raw `<video>` tags
 pointing at `github.com` are blocked by GitHub's `media-src` policy in repository documents.
-The site projection converts managed attachment paragraphs to `<video controls preload="metadata">`
-elements; authored documents keep the durable attachment URL. Neither signed media URLs nor
-rendered media belong in Git. Older markers and raw video embeds are accepted during migration.
+The site projection replaces the entire visualization block with a `<video controls
+preload="metadata">` element. Authored documents keep the durable attachment URL; neither signed
+media URLs nor rendered media belong in Git. Older single markers with a `src` attribute and an
+embed after them are read during migration; generation upgrades them without re-uploading.
+Nested visualization blocks, orphan closing markers, and blocks crossing code or `<details>`
+boundaries are rejected.
 
-Static media uses `<img alt="" src="...">`. Generated media must remain language-neutral; English
-and Russian markers referencing identical C++ sources reuse one attachment. Source fences are
+Static media uses `<img alt="" src="...">` inside the same paired markers. Generated media must
+remain language-neutral; English and Russian markers referencing identical C++ sources reuse one
+attachment. Source fences are
 normalized only for line endings, trailing whitespace, and surrounding empty lines.
 
 ## Local generation
@@ -88,9 +96,11 @@ python3 publish.py visualizations generate --course-repo <course>
 
 Generation compares the exact source, template, media type, and renderer revision with the committed
 manifest. Moving a marker or sharing an unchanged source across languages does not render or upload
-again. Changing source or renderer revision regenerates its asset. Confirmed missing remote assets regenerate
+again. Changing source or renderer revision regenerates its asset. Confirmed missing remote assets
+regenerate
 as well. Transient access errors retry twice, then retain existing media with a diagnostic;
-they never trigger an unnecessary render or upload. Existing manifest entries remain available for recovery; they are never deleted.
+they never trigger an unnecessary render or upload. Existing manifest entries remain available for
+recovery; they are never deleted.
 
 Each successful upload is recorded immediately, so a later failure can resume without repeating it.
 Render or upload failure preserves that marker's previous media and returns a diagnostic/nonzero
