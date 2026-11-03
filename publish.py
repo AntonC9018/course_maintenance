@@ -150,12 +150,21 @@ register("ci", "prepare", run_ci_prepare, "validate course policy and expose sha
 register("toolchain", "show", run_toolchain_show, "expose shared runtime/browser pins and cache key")
 
 
+from publishing.visualization_assets import (run_visualizations_check,
+                                              run_visualizations_generate)
+
+register("visualizations", "generate", run_visualizations_generate,
+         "render and upload tagged visualization sources locally")
+register("visualizations", "check", run_visualizations_check,
+         "validate referenced visualization assets without rendering")
+
+
 def build_parser():
     ap = argparse.ArgumentParser(
         description="Course maintenance dispatcher: "
                     "<responsibility> <operation> --course-repo <repo>")
     ap.add_argument("responsibility", nargs="?",
-                    help="metadata | publishing | projection | site | ci | smoke | pages | toolchain")
+                    help="metadata | publishing | projection | site | ci | smoke | pages | toolchain | visualizations")
     ap.add_argument("operation", nargs="?",
                     help="generate | check | build | prepare | verify | show (omit for ci)")
     ap.add_argument("--course-repo", default=".",

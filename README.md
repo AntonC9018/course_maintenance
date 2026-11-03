@@ -15,6 +15,8 @@ python3 publish.py ci --course-repo <repo> --out <outside-dir>
 python3 publish.py smoke check --course-repo <repo>
 python3 publish.py pages verify --course-repo <repo> --strict
 python3 publish.py toolchain show
+python3 publish.py visualizations generate --course-repo <repo>
+python3 publish.py visualizations check --course-repo <repo>
 python3 -m unittest discover -s tests
 ```
 
@@ -31,3 +33,8 @@ GitHub triggers, permissions, artifact upload, and deployment.
 Maintenance preserves the fixed order rename → convert → headings →
 links. Preview before applying; follow `AGENTS.md`. Tests use isolated
 temporary course fixtures and do not mutate real course sources.
+
+Visualization rendering is local-only. The pinned Manim/LaTeX toolchain and
+its headless proof live in `visualizations/README.md`; CI never installs or
+runs it. The optional [visualization integration](docs/visualization-assets.md) renders tagged
+examples locally, reuses shared assets, and checks referenced attachments in CI.
