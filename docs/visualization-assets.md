@@ -82,8 +82,9 @@ python3 publish.py visualizations generate --course-repo <course>
 
 Generation compares the exact source, template, media type, and renderer revision with the committed
 manifest. Moving a marker or sharing an unchanged source across languages does not render or upload
-again. Changing source or renderer revision regenerates its asset. Missing remote assets regenerate
-as well. Existing manifest entries remain available for recovery; they are never deleted.
+again. Changing source or renderer revision regenerates its asset. Confirmed missing remote assets regenerate
+as well. Transient access errors retry twice, then retain existing media with a diagnostic;
+they never trigger an unnecessary render or upload. Existing manifest entries remain available for recovery; they are never deleted.
 
 Each successful upload is recorded immediately, so a later failure can resume without repeating it.
 Render or upload failure preserves that marker's previous media and returns a diagnostic/nonzero

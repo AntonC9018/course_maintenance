@@ -274,6 +274,19 @@ class TransportTest(unittest.TestCase):
             self.assertFalse(asset_exists(URL))
             self.assertEqual(open_url.call_count, 1)
 
+    def test_transient_availability_failure_retries_without_reporting_missing(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.status = 200
+        with mock.patch('publishing.visualization_assets.urlopen',
+                        side_effect=[OSError('temporary outage'), response]) as request:
+            self.assertTrue(asset_exists(URL))
+            self.assertEqual(request.call_count, 2)
+
+    def test_unverified_availability_is_an_error_not_missing(self):
+        with mock.patch('publishing.visualization_assets.urlopen', side_effect=OSError('offline')):
+            with self.assertRaisesRegex(VisualizationError, 'cannot verify'):
+                asset_exists(URL)
+
     def test_upload_uses_body_file_and_retrieves_resulting_comment(self):
         with tempfile.TemporaryDirectory() as tmp:
             body = Path(tmp) / 'body.md'
