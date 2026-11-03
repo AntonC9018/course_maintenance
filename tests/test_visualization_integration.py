@@ -193,6 +193,19 @@ class GenerationTest(unittest.TestCase):
         manifest = json.loads((self.root / self.options.manifest).read_text())
         self.assertEqual(len(manifest['assets']), 4)  # old URLs remain recoverable
 
+    def test_inconclusive_availability_never_renders_uploads_or_changes_sources(self):
+        self.assertEqual(self.run_generate(), [])
+        before = self.snapshot()
+        self.commands.clear()
+        def offline(_):
+            raise VisualizationError('cannot verify asset availability')
+        errors = self.run_generate(exists=offline)
+        self.assertEqual(len(errors), 2)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(len(self.uploads), 1)
+        self.assertFalse(any(command[2] in {'probe', 'render'} for command in self.commands))
+        self.assertEqual(len(validate(self.root, self.config, remote=True, exists=offline)), 2)
+
     def test_moved_tag_reuses_asset(self):
         self.assertEqual(self.run_generate(), [])
         path = self.root / 'en/lab.md'
