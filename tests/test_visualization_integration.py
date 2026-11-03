@@ -27,12 +27,64 @@ def document(source=SOURCE, marker='<!-- <visualization type="animation"> -->'):
 
 
 class SourceLookupTest(unittest.TestCase):
+    def test_generated_link_is_inside_paired_markers(self):
+        text = document()
+        tag = scan_document(text).tags[0]
+        generated = render_marker(tag, URL)
+        expected = ('<!-- <visualization type="animation"> -->\n\n'
+                    + URL + '\n\n<!-- </visualization> -->')
+        self.assertEqual(generated, expected)
+        updated = text[:tag.start] + generated + text[tag.embed_end:]
+        result = scan_document(updated)
+        self.assertEqual(result.errors, [])
+        self.assertEqual(len(result.tags), 1)
+        self.assertEqual(result.tags[0].src, URL)
+        self.assertEqual(updated[result.tags[0].start:result.tags[0].embed_end], expected)
+        projected = project_visualizations(updated)
+        self.assertIn(f'src="{URL}"></video>', projected)
+        self.assertNotIn('visualization>', projected)
+
+    def test_empty_and_static_paired_markers(self):
+        empty = '<!-- <visualization type="static" template="memory"> -->\n\n<!-- </visualization> -->'
+        result = scan_document(document(marker=empty))
+        self.assertEqual(result.errors, [])
+        tag = result.tags[0]
+        self.assertIsNone(tag.src)
+        generated = render_marker(tag, URL)
+        self.assertTrue(generated.startswith('<!-- <visualization type="static" template="memory"> -->'))
+        self.assertTrue(generated.endswith('<!-- </visualization> -->'))
+        self.assertIn('<img alt=""', generated)
+        reread = scan_document(document(marker=generated))
+        self.assertEqual(reread.errors, [])
+        self.assertEqual(reread.tags[0].src, URL)
+
+    def test_paired_marker_body_is_validated_and_closing_cannot_cross_details(self):
+        for body in (URL + '\n' + OTHER_URL, 'unmanaged prose',
+                     '<!-- <visualization type="animation"> -->\n' + URL):
+            marker = '<!-- <visualization type="animation"> -->\n\n' + body + '\n\n<!-- </visualization> -->'
+            with self.subTest(body=body):
+                self.assertTrue(scan_document(document(marker=marker)).errors)
+        self.assertTrue(scan_document(document(marker='<!-- </visualization> -->')).errors)
+        crossed = document(marker='<!-- <visualization type="animation"> -->\n\n' + URL)
+        crossed += '\n<!-- </visualization> -->'
+        self.assertTrue(scan_document(crossed).errors)
+
+    def test_legacy_marker_before_paired_marker_in_same_details(self):
+        for suffix in ('>', ' />'):
+            legacy = f'<!-- <visualization type="animation" src="{URL}"{suffix} -->\n\n{URL}'
+            paired = ('<!-- <visualization type="animation"> -->\n\n'
+                      + OTHER_URL + '\n\n<!-- </visualization> -->')
+            with self.subTest(suffix=suffix):
+                result = scan_document(document(marker=legacy + '\n\n' + paired))
+                self.assertEqual(result.errors, [])
+                self.assertEqual([tag.src for tag in result.tags], [URL, OTHER_URL])
+
     def test_github_attachment_paragraph_and_site_player_use_same_asset(self):
         text = document()
         tag = scan_document(text).tags[0]
         managed = render_marker(tag, URL)
         self.assertNotIn('<video', managed)
-        self.assertIn('" /> -->\n\n' + URL, managed)
+        self.assertIn('"> -->\n\n' + URL + '\n\n<!-- </visualization> -->', managed)
         text = text[:tag.start] + managed + text[tag.end:]
         projected = project_visualizations(text)
         self.assertIn('<video controls preload="metadata"', projected)
@@ -52,7 +104,7 @@ class SourceLookupTest(unittest.TestCase):
         tag = scan_document(text).tags[0]
         updated = text[:tag.start] + render_marker(tag, URL) + text[tag.embed_end:]
         self.assertNotIn('<video', updated)
-        self.assertEqual(updated.count(URL), 2)
+        self.assertEqual(updated.count(URL), 1)
 
     def test_answer_code_and_fake_html_in_code_do_not_replace_source(self):
         text = ('```cpp\nint a{5}; // <details>\n```\n<details>\n'
@@ -207,6 +259,21 @@ class GenerationTest(unittest.TestCase):
         self.assertNotIn('<video', body)
         self.assertIn('\n\n' + URL + '\n', body)
         self.assertIn(URL, body)
+
+    def test_upgrading_legacy_embeds_reuses_upload_and_manifest(self):
+        self.assertEqual(self.run_generate(), [])
+        manifest = (self.root / self.options.manifest).read_bytes()
+        for lang in ('en', 'ru'):
+            legacy = f'<!-- <visualization type="animation" src="{URL}" /> -->\n\n{URL}'
+            (self.root / lang / 'lab.md').write_text(document(marker=legacy))
+        self.commands.clear()
+        self.assertEqual(self.run_generate(), [])
+        self.assertEqual(len(self.uploads), 1)
+        self.assertFalse(any(command[2] in {'probe', 'render'} for command in self.commands))
+        self.assertEqual((self.root / self.options.manifest).read_bytes(), manifest)
+        self.assertEqual(validate(self.root, self.config), [])
+        self.assertEqual((self.root / 'en/lab.md').read_bytes(),
+                         (self.root / 'ru/lab.md').read_bytes())
 
     def test_source_and_renderer_changes_regenerate(self):
         self.assertEqual(self.run_generate(), [])
