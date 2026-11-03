@@ -62,21 +62,39 @@ def _save_manifest(path: Path, manifest: dict):
 
 
 def asset_exists(url: str) -> bool:
-    """Check anonymous access; servers rejecting HEAD get a bounded range GET."""
+    """Only confirmed absence permits replacement; outages must preserve existing assets."""
     if not ASSET_URL.fullmatch(url):
         return False
-    try:
+    failure = None
+    for _ in range(2):
         try:
-            with urlopen(Request(url, method='HEAD'), timeout=20) as response:
-                return 200 <= response.status < 300
+            try:
+                with urlopen(Request(url, method='HEAD', headers={'Cache-Control': 'no-cache'}),
+                             timeout=20) as response:
+                    if 200 <= response.status < 300:
+                        return True
+                    raise OSError(f'unexpected HTTP status {response.status}')
+            except HTTPError as exc:
+                if exc.code in {404, 410}:
+                    exc.close()
+                    return False
+                if exc.code not in {403, 405, 501}:
+                    raise
+                exc.close()
+            with urlopen(Request(url, headers={'Range': 'bytes=0-0',
+                                               'Cache-Control': 'no-cache'}), timeout=20) as response:
+                if 200 <= response.status < 300:
+                    return True
+                raise OSError(f'unexpected HTTP status {response.status}')
         except HTTPError as exc:
-            if exc.code not in {403, 405, 501}:
+            if exc.code in {404, 410}:
+                exc.close()
                 return False
+            failure = str(exc)
             exc.close()
-        with urlopen(Request(url, headers={'Range': 'bytes=0-0'}), timeout=20) as response:
-            return 200 <= response.status < 300
-    except (HTTPError, URLError, OSError, ValueError):
-        return False
+        except (URLError, OSError, ValueError) as exc:
+            failure = str(exc)
+    raise VisualizationError(f'cannot verify asset availability after two attempts: {failure}')
 
 
 def _command(argv: list[str], *, timeout=120) -> str:
@@ -166,8 +184,13 @@ def validate(repo: Path, config, selected_paths=None, *, remote=False, exists=No
                 errors.append(f'{location} missing or stale media embed; run visualizations generate')
             if remote:
                 if tag.src not in checked:
-                    checked[tag.src] = exists(tag.src)
-                if not checked[tag.src]:
+                    try:
+                        checked[tag.src] = exists(tag.src)
+                    except VisualizationError as exc:
+                        checked[tag.src] = str(exc)
+                if isinstance(checked[tag.src], str):
+                    errors.append(f'{location} {checked[tag.src]}; retry the check')
+                elif not checked[tag.src]:
                     errors.append(f'{location} referenced asset is unavailable: {tag.src}')
     return errors
 

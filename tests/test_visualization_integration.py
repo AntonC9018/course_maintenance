@@ -193,6 +193,19 @@ class GenerationTest(unittest.TestCase):
         manifest = json.loads((self.root / self.options.manifest).read_text())
         self.assertEqual(len(manifest['assets']), 4)  # old URLs remain recoverable
 
+    def test_inconclusive_availability_never_renders_uploads_or_changes_sources(self):
+        self.assertEqual(self.run_generate(), [])
+        before = self.snapshot()
+        self.commands.clear()
+        def offline(_):
+            raise VisualizationError('cannot verify asset availability')
+        errors = self.run_generate(exists=offline)
+        self.assertEqual(len(errors), 2)
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(len(self.uploads), 1)
+        self.assertFalse(any(command[2] in {'probe', 'render'} for command in self.commands))
+        self.assertEqual(len(validate(self.root, self.config, remote=True, exists=offline)), 2)
+
     def test_moved_tag_reuses_asset(self):
         self.assertEqual(self.run_generate(), [])
         path = self.root / 'en/lab.md'
@@ -273,6 +286,19 @@ class TransportTest(unittest.TestCase):
         with mock.patch('publishing.visualization_assets.urlopen', side_effect=error) as open_url:
             self.assertFalse(asset_exists(URL))
             self.assertEqual(open_url.call_count, 1)
+
+    def test_transient_availability_failure_retries_without_reporting_missing(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.status = 200
+        with mock.patch('publishing.visualization_assets.urlopen',
+                        side_effect=[OSError('temporary outage'), response]) as request:
+            self.assertTrue(asset_exists(URL))
+            self.assertEqual(request.call_count, 2)
+
+    def test_unverified_availability_is_an_error_not_missing(self):
+        with mock.patch('publishing.visualization_assets.urlopen', side_effect=OSError('offline')):
+            with self.assertRaisesRegex(VisualizationError, 'cannot verify'):
+                asset_exists(URL)
 
     def test_upload_uses_body_file_and_retrieves_resulting_comment(self):
         with tempfile.TemporaryDirectory() as tmp:
