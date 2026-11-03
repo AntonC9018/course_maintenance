@@ -101,6 +101,23 @@ def run(paths, *, root: Path, check_only: bool, quiet: bool,
         print('--- links (skipped) ---')
         links_fixed, links_broken = 0, 0
 
+    # Visualizations are a course-owned optional post-link stage. Read-only
+    # maintenance checks local metadata; publishing check verifies remote assets.
+    visualization_errors = []
+    if (root / "course-publishing.json").is_file():
+        from publishing.config import ConfigError, load_config
+        from publishing.visualization_assets import generate, validate
+        try:
+            config = load_config(root)
+            if config.visualizations is not None:
+                print('--- visualizations ---')
+                operation = validate if check_only else generate
+                visualization_errors = operation(root, config, selected_paths=md_files)
+        except ConfigError as exc:
+            visualization_errors = [str(exc)]
+        for error in visualization_errors:
+            print(f'error: {error}')
+
     mode = '[CHECK] ' if check_only else ''
     print(f'\n{mode}rename: {rename_count} file(s), '
           f'convert: {convert_count} file(s), '
@@ -112,6 +129,6 @@ def run(paths, *, root: Path, check_only: bool, quiet: bool,
     if check_only and (rename_count or convert_count or headings_count
                        or links_fixed or links_broken or rename_errors):
         return 1
-    if rename_errors:
+    if rename_errors or visualization_errors:
         return 1
     return 0

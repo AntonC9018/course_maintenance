@@ -20,6 +20,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .visualization_config import VisualizationOptions, parse_visualizations
 from .options import CiOptions, DeploymentOptions, MaintenanceOptions, NavigationOptions, SmokeOptions, parse_options
 
 CONFIG_FILENAME = "course-publishing.json"
@@ -28,7 +29,7 @@ ALLOWED_TOP_FIELDS = frozenset({
     "version", "default_language", "languages", "exclude",
     "route_sections", "site_title", "root_lesson", "peer_repositories",
 })
-OPTIONAL_TOP_FIELDS = frozenset({"ci", "deployment", "smoke", "navigation", "slug_overrides", "backlink_labels", "maintenance"})
+OPTIONAL_TOP_FIELDS = frozenset({"ci", "deployment", "smoke", "navigation", "slug_overrides", "backlink_labels", "maintenance", "visualizations"})
 ALLOWED_LANGUAGE_FIELDS = frozenset({"code", "root", "label"})
 ALLOWED_ROUTE_FIELDS = frozenset({"source", "destination"})
 
@@ -173,6 +174,8 @@ class PublishingConfig:
     slug_overrides: dict[str, str] = field(default_factory=dict)
     backlink_labels: dict[str, str] = field(default_factory=dict)
     maintenance: MaintenanceOptions = field(default_factory=MaintenanceOptions)
+
+    visualizations: VisualizationOptions | None = None
 
     def roots(self) -> dict[str, str]:
         return {l.code: l.root for l in self.languages}
@@ -436,6 +439,7 @@ def load_config(course_repo: Path | str) -> PublishingConfig:
 
     try:
         ci, deployment, smoke, navigation, slug_overrides, backlink_labels, maintenance = parse_options(raw, repo, codes)
+        visualizations = parse_visualizations(raw.get("visualizations"), repo)
     except ValueError as exc:
         raise _fail(str(exc), path=cfg_path) from exc
 
@@ -457,4 +461,5 @@ def load_config(course_repo: Path | str) -> PublishingConfig:
         slug_overrides=slug_overrides,
         backlink_labels=backlink_labels,
         maintenance=maintenance,
+        visualizations=visualizations,
     )

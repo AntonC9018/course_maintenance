@@ -87,6 +87,13 @@ def run_publishing_check(course_repo: Path, args) -> int:
             print(f"error: {msg}", file=sys.stderr)
         return 1
 
+    from .visualization_assets import validate as validate_visualizations
+    visualization_errors = validate_visualizations(repo, config, remote=True)
+    if visualization_errors:
+        for msg in visualization_errors:
+            print(f"error: {msg}", file=sys.stderr)
+        return 1
+
     counts = inventory.count_by_language()
     per_lang = ", ".join(
         f"{n} {code}" for code, n in sorted(counts.items()))
