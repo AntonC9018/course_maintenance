@@ -63,6 +63,25 @@ class LinkTest(unittest.TestCase):
                       with_site_links(lesson(heading=''), 'ru', PAGE))
         self.assertIn('[▶ Step through', link_body('de', PAGE, None))
 
+    def test_template_labels_override_only_their_tags_and_languages(self):
+        labels = {'layout': {'en': 'Explore this layout'}}
+        layout = '<!-- <visualization template="layout"> -->\n<!-- </visualization> -->'
+        self.assertIn('[Explore this layout](',
+                      with_site_links(lesson(marker=layout), 'en', PAGE, labels))
+        self.assertIn('[▶ Пошаговое', with_site_links(lesson(marker=layout), 'ru', PAGE, labels))
+        self.assertIn('[▶ Step through', with_site_links(lesson(), 'en', PAGE, labels))
+
+    def test_labels_are_validated(self):
+        from publishing.visualization_config import parse_visualizations
+        base = {'roots': ['en']}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(parse_visualizations({**base, 'labels': {'layout': {'en': 'A'}}},
+                                                  Path(tmp)).labels, {'layout': {'en': 'A'}})
+            for labels in ([], {'Bad': {}}, {'layout': []}, {'layout': {'en': ''}},
+                           {'layout': {'en': 'a ] b'}}, {'layout': {'en': 'a\nb'}}):
+                with self.subTest(labels=labels), self.assertRaises(ValueError):
+                    parse_visualizations({**base, 'labels': labels}, Path(tmp))
+
 
 class BuiltSiteTest(unittest.TestCase):
     def test_links_are_checked_against_built_heading_ids(self):

@@ -98,18 +98,29 @@ def heading_anchors(text: str) -> list[tuple[int, str]]:
     return anchors
 
 
-def link_body(language: str, page_url: str, anchor: str | None) -> str:
-    label = LINK_LABELS.get(language, LINK_LABELS['en'])
+def link_label(language: str, template: str | None = None, labels=None) -> str:
+    """The course's label for a template override, else the built-in step-through label."""
+    configured = (labels or {}).get(template, {}) if template else {}
+    return configured.get(language) or LINK_LABELS.get(language, LINK_LABELS['en'])
+
+
+def link_body(language: str, page_url: str, anchor: str | None, label: str | None = None) -> str:
+    label = label or link_label(language)
     target = page_url + (f'#{anchor}' if anchor else '')
     return f'\n\n[{label}]({target})\n\n'
 
 
-def with_site_links(text: str, language: str, page_url: str) -> str:
-    """Rewrite every tag body to its link; the rest of the text is untouched."""
+def with_site_links(text: str, language: str, page_url: str, labels=None) -> str:
+    """Rewrite every tag body to its link; the rest of the text is untouched.
+
+    ``labels`` maps a template override to per-language link labels.
+    """
     anchors = heading_anchors(text)
     for tag in reversed(scan_document(text).tags):
         anchor = next((slug for offset, slug in reversed(anchors) if offset < tag.start), None)
-        text = text[:tag.body_start] + link_body(language, page_url, anchor) + text[tag.body_end:]
+        label = link_label(language, tag.template, labels)
+        body = link_body(language, page_url, anchor, label)
+        text = text[:tag.body_start] + body + text[tag.body_end:]
     return text
 
 

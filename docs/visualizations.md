@@ -14,7 +14,8 @@ Add an optional `visualizations` object to `course-publishing.json`:
     "templates": "visualizations",
     "roots": ["en/labs/cpp", "ru/labs/cpp"],
     "shell": "visualizations",
-    "traces": ".cache/visualizations"
+    "traces": ".cache/visualizations",
+    "labels": {"layout": {"en": "▶ Explore this layout on the course site"}}
   }
 }
 ```
@@ -23,10 +24,12 @@ Add an optional `visualizations` object to `course-publishing.json`:
 - `templates` is the directory that holds `generate.py`.
 - `shell` names a dev shell of the flake at the course root (`nix develop .#<shell>`).
 - `traces` is the generated trace directory; add it to `.gitignore`.
+- `labels` overrides the site-link label for tags with a `template` override, per language.
+  Other tags and unlisted languages keep the built-in step-through label.
 
 All paths must be canonical repository-relative paths; symlinks escaping the repository are
-rejected. The other fields default to the values shown. A course without this object has no
-visualization step.
+rejected. The other fields default to the values shown, and `labels` to none.
+A course without this object has no visualization step.
 
 ## Tags and source lookup
 

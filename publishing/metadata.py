@@ -495,7 +495,7 @@ def _with_visualization_links(config, rel: str, text: str, lang: str,
                                   for root in options.roots):
         return text
     from .visualization_site import with_site_links
-    return with_site_links(text, lang, expected_backlink_url(pages_url, slug))
+    return with_site_links(text, lang, expected_backlink_url(pages_url, slug), options.labels)
 
 
 def validate_all_metadata(course_repo: Path, config, inventory,
