@@ -52,6 +52,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .site_assets import copy_site_assets, head_js
+
 PINNED_VERSIONS = {
     # Proven by the compatibility suite (representative lessons with
     # nested details, C++ angle brackets, `$`code`$`/`$$` math, static
@@ -82,6 +84,7 @@ PINNED_BROWSERS = {
 }
 
 RENDERER_DIR_NAME = "renderer"
+
 
 
 def renderer_dir() -> Path:
@@ -262,6 +265,7 @@ def generate_astro_config(config, identity, starlight_sidebar,
         "      pagefind: true,",
         "      pagination: true,",
         "      customCss: ['./src/styles/custom.css'],",
+        f"      head: {head_js(config.site_assets, base)},",
         "      // KaTeX CSS via customCss hides the MathML copy (else formulas",
         "      // appear duplicated: MathML + HTML). Fonts bundle from the",
         "      // pinned katex package, no CDN.",
@@ -449,6 +453,7 @@ def write_site_project(out_dir: Path, files: dict[str, str], copy_list,
     public = out_dir / "public"
     public.mkdir(parents=True, exist_ok=True)
     (public / ".nojekyll").write_bytes(b"")
+    copy_site_assets(config.site_assets, config.course_repo, public)
     dist_dir = out_dir / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
     keep = dist_dir / ".gitkeep"
@@ -648,6 +653,16 @@ def run_site_build(course_repo: Path, args) -> int:
         for msg in _forbidden_dist:
             print(f"error: {msg}", file=sys.stderr)
         return 1
+    # Visualization links carry computed anchors; check them against the
+    # renderer's real heading ids (only after a real build).
+    if (out_resolved / "dist" / "index.html").is_file():
+        from .visualization_site import broken_site_links
+        broken = broken_site_links(repo, config, identity.pages_url,
+                                   out_resolved / "dist")
+        if broken:
+            for msg in broken:
+                print(f"error: {msg}", file=sys.stderr)
+            return 1
     n_lessons = sum(1 for k in files if k.startswith("src/content/docs/"))
     print(f"site build: OK ({n_lessons} lesson(s)) in {out_resolved} "
           f"(dist below)")

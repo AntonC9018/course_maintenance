@@ -1,24 +1,28 @@
-"""Visualization markers and their preceding, outside-answer C++ source fences."""
+"""Paired visualization markers and the C++ source fence each one illustrates.
+
+A tag is two HTML comments inside an answer-style ``<details>`` block::
+
+    <!-- <visualization> -->
+    ...maintenance-owned body...
+    <!-- </visualization> -->
+
+``template="name"`` on the opening marker overrides the tracer's own choice.
+The source is the nearest preceding top-level code fence, which must be C++.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from html import escape
-from html.parser import HTMLParser
 from pathlib import Path
 import re
 
 CPP_LANGUAGES = frozenset({'cpp', 'c++', 'cxx'})
-ASSET_URL = re.compile(r'https://github\.com/user-attachments/assets/[A-Za-z0-9-]+\Z')
 _OPEN_FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})([^\n]*)$')
 _DETAILS = re.compile(r'</?details\b[^>]*>|</?visualization\b[^>]*>', re.IGNORECASE)
-_CLOSE_MARKER = re.compile(r'<!--\s*</visualization\s*>\s*-->', re.IGNORECASE)
-_BLOCK_BOUNDARY = re.compile(
-    r'<!--\s*<visualization\b|</?details\b|^ {0,3}(?:`{3,}|~{3,})',
-    re.IGNORECASE | re.MULTILINE)
-_EMBED = re.compile(
-    r'\s*(?:<video\b[^>]*>\s*</video>|<img\b[^>]*>|'
-    r'https://github\.com/user-attachments/assets/[A-Za-z0-9-]+(?=[ \t]*(?:\r?\n|$)))',
-    re.DOTALL)
+_MENTIONS_TAG = re.compile(r'<\s*/?\s*visualization\b', re.IGNORECASE)
+_OPENING = re.compile(r'<visualization(?:\s+template="([a-z][a-z0-9-]*)")?\s*>')
+_CLOSING = re.compile(r'</visualization\s*>', re.IGNORECASE)
+_BLOCK_BOUNDARY = re.compile(r'</?details\b|^ {0,3}(?:`{3,}|~{3,})',
+                             re.IGNORECASE | re.MULTILINE)
 
 
 def normalize_source(source: str) -> str:
@@ -41,12 +45,11 @@ class Tag:
     start: int
     end: int
     line: int
-    type: str
-    template: str
-    src: str | None
+    # None lets the tracer choose; only an explicit override is recorded.
+    template: str | None
     source: Fence
-    embed_start: int
-    embed_end: int
+    body_start: int
+    body_end: int
 
 
 @dataclass
@@ -56,38 +59,50 @@ class ScanResult:
     errors: list[str] = field(default_factory=list)
 
 
-class _TagParser(HTMLParser):
-    def __init__(self):
-        super().__init__(convert_charrefs=True)
-        self.attributes = None
-        self.error = None
+def _tag_problem(content: str, depth: int, source: Fence | None) -> str | None:
+    if _CLOSING.fullmatch(content):
+        return 'closing visualization marker has no matching opening marker'
+    if '<!--' in content:
+        return 'nested or unclosed visualization comment'
+    if not _OPENING.fullmatch(content):
+        return 'expected <visualization> or <visualization template="name">'
+    if depth == 0:
+        return 'visualization must be inside a details block'
+    if source is None:
+        return 'no preceding source fence outside details'
+    if source.language not in CPP_LANGUAGES:
+        return 'nearest preceding outside-details fence must be C++'
+    return None
 
-    def handle_starttag(self, tag, attrs):
-        if tag != 'visualization' or self.attributes is not None:
-            self.error = 'expected one visualization tag'
-        else:
-            names = [key for key, _ in attrs]
-            if len(names) != len(set(names)):
-                self.error = 'duplicate visualization attribute'
-            self.attributes = dict(attrs)
 
-    handle_startendtag = handle_starttag
+def _closing_marker(text: str, start: int) -> tuple[int, int] | None:
+    """The closing marker's span, skipping ordinary comments in the body.
 
-    def handle_data(self, data):
-        if data.strip():
-            self.error = 'unexpected text in visualization marker'
-
-    def handle_endtag(self, tag):
-        self.error = 'visualization marker must not have a closing tag'
+    Block boundaries count only outside comments, so the body cannot leave
+    its details block or fence; another visualization marker ends the search.
+    """
+    cursor = start
+    while True:
+        comment = text.find('<!--', cursor)
+        if _BLOCK_BOUNDARY.search(text, cursor, len(text) if comment < 0 else comment):
+            return None
+        if comment < 0:
+            return None
+        close = text.find('-->', comment + 4)
+        if close < 0:
+            return None
+        content = text[comment + 4:close].strip()
+        if _CLOSING.fullmatch(content):
+            return comment, close + 3
+        if _MENTIONS_TAG.search(content):
+            return None
+        cursor = close + 3
 
 
 def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
     """Scan without interpreting fenced HTML or answer-only code as source.
 
-    Opening and closing tags are separate HTML comments; the generated media
-    lives between them. Legacy single markers remain readable for migration.
-    A source is the nearest preceding *top-level* code fence, which must be C++.
-    Character offsets permit callers to replace just managed marker/embed text.
+    Character offsets let callers replace a tag's body without touching the rest.
     """
     result = ScanResult()
     depth = 0
@@ -97,12 +112,11 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
     lines = text.splitlines(keepends=True)
     index = 0
 
-    def error(line, message):
-        result.errors.append(f'{path}:{line}: [VIS] {message}')
+    def error(offset, message):
+        result.errors.append(f'{path}:{text.count(chr(10), 0, offset) + 1}: [VIS] {message}')
 
     while index < len(lines):
         line = lines[index]
-        number = index + 1
         plain = line.rstrip('\r\n')
         if fence is not None:
             marker, start, body_start, open_depth, language, open_line = fence
@@ -120,7 +134,7 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
         if match:
             marker, info = match.groups()
             language = info.strip().split(None, 1)[0].lower() if info.strip() else ''
-            fence = (marker, position, position + len(line), depth, language, number)
+            fence = (marker, position, position + len(line), depth, language, index + 1)
             position += len(line)
             index += 1
             continue
@@ -135,78 +149,26 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
             if comment >= 0 and (detail is None or comment < detail.start()):
                 close = text.find('-->', comment + 4)
                 if close < 0:
-                    if '<visualization' in text[comment:]:
-                        error(number, 'unclosed visualization comment')
+                    if _MENTIONS_TAG.search(text, comment):
+                        error(comment, 'unclosed visualization comment')
                     return result
                 finish = close + 3
                 content = text[comment + 4:close].strip()
-                if re.fullmatch(r'</visualization\s*>', content, re.IGNORECASE):
-                    error(number, 'closing visualization marker has no matching opening marker')
-                if re.search(r'<\s*visualization\b', content, re.IGNORECASE):
-                    if '<!--' in content:
-                        error(number, 'nested or unclosed visualization comment')
-                        return result
-                    parser = _TagParser()
-                    try:
-                        parser.feed(content)
-                        parser.close()
-                    except Exception as exc:
-                        parser.error = str(exc)
-                    attrs = parser.attributes or {}
-                    problem = parser.error
-                    if not re.fullmatch(r'<visualization\b[^>]*?/?>', content, re.DOTALL):
-                        problem = 'expected one complete visualization tag'
-                    elif set(attrs) - {'type', 'template', 'src'}:
-                        problem = 'unknown visualization attribute'
-                    elif attrs.get('type') not in {'static', 'animation'}:
-                        problem = 'type must be static or animation'
-                    elif 'template' in attrs and not re.fullmatch(r'[a-z][a-z0-9-]*', attrs['template'] or ''):
-                        problem = 'invalid template identifier'
-                    elif 'src' in attrs and not ASSET_URL.fullmatch(attrs['src'] or ''):
-                        problem = 'src must be a GitHub user-attachment asset URL'
-                    elif depth == 0:
-                        problem = 'visualization must be inside an answer details block'
-                    elif last_source is None:
-                        problem = 'no preceding source fence outside details'
-                    elif last_source.language not in CPP_LANGUAGES:
-                        problem = 'nearest preceding outside-details fence must be C++'
-                    marker_end = finish
-                    embed = _EMBED.match(text, finish)
-                    embed_end = embed.end() if embed else finish
-                    src = attrs.get('src')
-                    closing = (None if content.rstrip().endswith('/>')
-                               else _CLOSE_MARKER.search(text, finish))
-                    if closing:
-                        body = text[finish:closing.start()]
-                        boundary = _BLOCK_BOUNDARY.search(body)
-                        if boundary is None:
-                            finish = embed_end = closing.end()
-                            body = body.strip()
-                            body_src = None
-                            if body:
-                                if attrs.get('type') == 'animation' and ASSET_URL.fullmatch(body):
-                                    body_src = body
-                                elif attrs.get('type') == 'static':
-                                    image = re.fullmatch(r'<img\s+alt=""\s+src="([^"]+)"\s*/?>',
-                                                         body, re.DOTALL)
-                                    if image and ASSET_URL.fullmatch(image.group(1)):
-                                        body_src = image.group(1)
-                                if body_src is None:
-                                    problem = 'visualization body must contain exactly one matching media embed'
-                            if src and body_src and src != body_src:
-                                problem = 'visualization src and body refer to different assets'
-                            src = body_src or src
-                        elif boundary.group().startswith('<!--') and not src:
-                            problem = 'nested visualization markers are not allowed'
-                    if finish == marker_end and embed and not src:
-                        problem = 'visualization media is missing its closing marker'
+                if _MENTIONS_TAG.search(content):
+                    problem = _tag_problem(content, depth, last_source)
+                    closing = None if problem else _closing_marker(text, finish)
+                    if not problem and closing is None:
+                        problem = 'opening marker needs a closing <!-- </visualization> --> before the next block'
                     if problem:
-                        error(text.count('\n', 0, comment) + 1, problem)
+                        error(comment, problem)
+                        if problem.startswith('nested'):
+                            return result
                     else:
-                        result.tags.append(Tag(comment, marker_end,
-                            text.count('\n', 0, comment) + 1, attrs['type'],
-                            attrs.get('template', 'expression-timeline'), src,
-                            last_source, marker_end, embed_end))
+                        result.tags.append(Tag(
+                            comment, closing[1], text.count('\n', 0, comment) + 1,
+                            _OPENING.fullmatch(content).group(1), last_source,
+                            finish, closing[0]))
+                        finish = closing[1]
                 cursor = finish
                 if finish > line_end:
                     while index < len(lines) and position + len(lines[index]) < finish:
@@ -214,8 +176,8 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
                         index += 1
                     line_end = position + len(lines[index]) if index < len(lines) else len(text)
             elif detail is not None:
-                if re.match(r'</?visualization\b', detail.group(), re.IGNORECASE):
-                    error(number, 'visualization marker must be inside an HTML comment')
+                if _MENTIONS_TAG.match(detail.group()):
+                    error(detail.start(), 'visualization marker must be inside an HTML comment')
                 elif detail.group().startswith('</'):
                     depth = max(0, depth - 1)
                 else:
@@ -228,33 +190,6 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
         position += len(lines[index])
         index += 1
     if fence is not None and result.tags:
-        error(fence[-1], 'unclosed code fence after a visualization')
+        result.errors.append(f'{path}:{fence[-1]}: [VIS] unclosed code fence after a visualization')
     return result
 
-
-def render_marker(tag: Tag, src: str) -> str:
-    attributes = f'type="{tag.type}"'
-    if tag.template != 'expression-timeline':
-        attributes += f' template="{tag.template}"'
-    marker = f'<!-- <visualization {attributes}> -->'
-    if tag.type == 'animation':
-        # GitHub only resolves a bare attachment to its CSP-approved media host.
-        # A raw video keeps github.com as its src and is blocked before redirecting.
-        embed = src
-    else:
-        embed = f'<img alt=""\n  src="{escape(src, quote=True)}">'
-    return marker + '\n\n' + embed + '\n\n<!-- </visualization> -->'
-
-
-def project_visualizations(text: str) -> str:
-    """Turn managed attachment paragraphs into site players without changing sources."""
-    scanned = scan_document(text)
-    for tag in reversed(scanned.tags):
-        if tag.src:
-            if tag.type == 'animation':
-                embed = ('<video controls preload="metadata"\n'
-                         f'  src="{escape(tag.src, quote=True)}"></video>')
-            else:
-                embed = f'<img alt=""\n  src="{escape(tag.src, quote=True)}">'
-            text = text[:tag.start] + embed + text[tag.embed_end:]
-    return text

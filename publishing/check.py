@@ -87,8 +87,8 @@ def run_publishing_check(course_repo: Path, args) -> int:
             print(f"error: {msg}", file=sys.stderr)
         return 1
 
-    from .visualization_assets import validate as validate_visualizations
-    visualization_errors = validate_visualizations(repo, config, remote=True)
+    from .visualization_traces import validate as validate_visualizations
+    visualization_errors = validate_visualizations(repo, config)
     if visualization_errors:
         for msg in visualization_errors:
             print(f"error: {msg}", file=sys.stderr)

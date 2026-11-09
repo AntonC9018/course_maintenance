@@ -34,7 +34,7 @@ Maintenance preserves the fixed order rename → convert → headings →
 links. Preview before applying; follow `AGENTS.md`. Tests use isolated
 temporary course fixtures and do not mutate real course sources.
 
-Visualization rendering is local-only. The pinned Manim/LaTeX toolchain and
-its headless proof live in `visualizations/README.md`; CI never installs or
-runs it. The optional [visualization integration](docs/visualization-assets.md) renders tagged
-examples locally, reuses shared assets, and checks referenced attachments in CI.
+The optional [visualization integration](docs/visualizations.md) traces
+tagged C++ examples with the course's own pinned toolchain. CI enters that
+toolchain through Nix and caches traces by content, so only changed
+examples are traced again.

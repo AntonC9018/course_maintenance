@@ -37,6 +37,30 @@ runs:
     - name: Install Playwright Chromium
       shell: bash
       run: npx --prefix "$GITHUB_ACTION_PATH/../../../renderer" playwright install chromium
+    # Tracing needs the course's own pinned toolchain (its flake dev shell),
+    # so these steps run only for courses that configure visualizations.
+    - name: Install Nix for the visualization toolchain
+      if: steps.pins.outputs.visualizations == 'true'
+      uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+    - name: Cache Nix store paths
+      if: steps.pins.outputs.visualizations == 'true'
+      uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
+    # Traces are content addressed, so a partial restore from an older set
+    # only leaves the changed examples to trace; unused ones are pruned.
+    - name: Restore visualization traces
+      if: steps.pins.outputs.visualizations == 'true'
+      uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      with:
+        path: ${{ steps.pins.outputs.visualizations_traces }}
+        key: visualizations-${{ steps.pins.outputs.visualizations_cache_key }}
+        restore-keys: visualizations-
+    - name: Trace tagged examples
+      if: steps.pins.outputs.visualizations == 'true'
+      shell: bash
+      env:
+        COURSE_REPO: ${{ inputs.course-repo }}
+        SHELL_REF: ${{ steps.pins.outputs.visualizations_shell }}
+      run: nix develop "$SHELL_REF" --command python3 "$GITHUB_ACTION_PATH/../../../publish.py" visualizations generate --course-repo "$COURSE_REPO"
     - name: Course document validation and site build
       shell: bash
       env:
