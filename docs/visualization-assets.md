@@ -1,7 +1,7 @@
 # Visualization assets
 
 A course may opt into automatic visualization generation while keeping CI independent of compiler,
-GDB, browser, Manim, and ffmpeg installations. Templates and tracing logic remain course-owned.
+GDB, and browser installations. Templates and tracing logic remain course-owned.
 The maintenance package owns source lookup, minimal updates, upload, and referenced-asset checks.
 
 ## Course configuration
