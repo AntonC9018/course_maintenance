@@ -754,7 +754,13 @@ def collect_projection_data(course_repo: Path, config, identity,
         if players is not None:
             # Last, so link and math rewriting never see the embedded traces.
             from .visualization_site import with_players
-            body, missing = with_players('\n'.join(converted), players.load)
+            from .visualization_traces import VisualizationError
+            try:
+                body, missing = with_players('\n'.join(converted), players.load)
+            except (VisualizationError, ValueError) as exc:
+                # The tracer's revision failed, or a stored trace is not valid JSON.
+                errors.append(f"{rel}: [VIS] cannot embed traces: {exc}")
+                continue
             if missing:
                 # Projected line numbers differ from the lesson's, so count
                 # instead; `publishing check` names each tag's source line.

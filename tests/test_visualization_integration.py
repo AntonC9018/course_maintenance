@@ -118,12 +118,14 @@ class ConfigurationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self.assertIsNone(parse_visualizations(None, root))
+            for lang in ('en', 'ru'):
+                (root / lang / 'labs' / 'cpp').mkdir(parents=True)
             base = {'roots': ['en/labs/cpp', 'ru/labs/cpp']}
             options = parse_visualizations(base, root)
             self.assertEqual(options, VisualizationOptions(roots=('en/labs/cpp', 'ru/labs/cpp')))
             for changes in ({'extra': 1}, {'roots': ['en', 'en/labs']}, {'roots': ['en', 'en']},
                             {'traces': '../outside'}, {'shell': 'a b'}, {'shell': 3},
-                            {'repository': 'owner/course'}):
+                            {'repository': 'owner/course'}, {'roots': ['en/labs/missing']}):
                 with self.subTest(changes=changes), self.assertRaises(ValueError):
                     parse_visualizations({**base, **changes}, root)
 
