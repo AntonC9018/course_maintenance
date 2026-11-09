@@ -177,15 +177,13 @@ class TestHeadingShift(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_visualization_tag_is_dropped_only_in_projection(self):
+    def test_visualization_tag_passes_through_without_configuration(self):
         tag = '<!-- <visualization> -->\n\nbody\n\n<!-- </visualization> -->'
         body = ('# Trace\n\n```cpp\nint a{5};\na = 7;\n```\n\n<details>\n'
                 '<summary>Execution trace</summary>\n\n' + tag + '\n\n</details>\n')
         projected = self._project_full(body, title='Trace')
-        self.assertNotIn('visualization', projected)
-        self.assertNotIn('body', projected)
-        original = (self.root / 'en/labs/common/01_computer_architecture.md').read_text()
-        self.assertIn(tag, original)
+        self.assertIn(tag, projected)
+        self.assertNotIn('course-visualization', projected)
 
     def _project_full(self, source_body: str, title="T") -> str:
         make_repo(self.root, {

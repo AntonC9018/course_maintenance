@@ -49,12 +49,38 @@ a = 7;
 ````
 
 The opening and closing markers are separate HTML comments, so a body between them renders on
-GitHub. Maintenance owns that body. Write `<!-- <visualization template="name"> -->` only when the
-tracer's own template choice is wrong; there are no other attributes or per-example parameters.
+GitHub. Maintenance owns that body (see below).
+Write `<!-- <visualization template="name"> -->` only when the tracer's own template choice is
+wrong; there are no other attributes or per-example parameters.
 
 The source is the nearest preceding code fence outside **all** `<details>` blocks; it must use
 `cpp`, `c++`, or `cxx`. A fence inside an answer cannot replace the source example. Markdown fences
 also protect HTML-looking strings and comments inside code from changing answer nesting.
+
+## Site links and players
+
+`metadata generate` writes each tag's body: a localized link to the same example on the site, at the
+nearest preceding heading's anchor, so a GitHub reader can open the player.
+
+```markdown
+<!-- <visualization> -->
+
+[▶ Step through this example on the course site](https://owner.github.io/course/en/lesson/#4-heading)
+
+<!-- </visualization> -->
+```
+
+`publishing check` requires the body to be exactly that link. Anchors follow github-slugger, as
+Astro does, including `-1` suffixes for repeated headings.
+
+The site projection replaces each tag, link included, with one raw-HTML line embedding its trace:
+
+```html
+<div class="course-visualization"><script type="application/json">…</script></div>
+```
+
+The course's own player renders it; ship it through `site_assets`
+(see [course configuration](course-configuration.md)).
 
 ## Traces
 
@@ -73,7 +99,7 @@ python3 course_maintenance/publish.py visualizations check --course-repo .
 - A tag that fails to trace is an error naming its lesson and line; nothing is stored for it.
 - `check` runs no tracer. It reports malformed tags and tags without a trace.
 - `maintain.py` checks tag syntax only, so it needs no toolchain.
-- `publishing check`, and therefore CI, requires every trace.
+- `publishing check`, and therefore CI, requires every trace; the projection embeds them.
 
 ## The adapter contract
 
@@ -86,7 +112,8 @@ python3 course_maintenance/publish.py visualizations check --course-repo .
 ## CI
 
 `ci prepare` reports whether the course configures visualizations, and exposes the dev shell
-reference, the trace directory, and one key for the whole trace set. When it does, the shared action:
+reference, the trace directory, and one key for the whole trace set.
+When it does, the shared action:
 
 1. installs Nix and enables the Magic Nix Cache for the toolchain's store paths;
 2. restores the trace directory from `actions/cache`, falling back to the newest older set;

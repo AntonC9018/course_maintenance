@@ -92,6 +92,20 @@ names belong in `route_sections`, not special cases in the algorithm.
 `backlink_labels` optionally overrides the source backlink text per
 configured language; English/Russian defaults remain.
 
+## Site assets
+
+`site_assets` ships course-owned static files with the site and includes them on every page:
+
+```json
+"site_assets": {
+  "scripts": ["visualizations/player/player.js"],
+  "styles": ["visualizations/player/player.css"]
+}
+```
+
+Paths are repository-relative and must exist. Files are copied below `site-assets/` keeping their
+paths; scripts load with `defer`, styles as stylesheets, in the listed order.
+
 ## Smoke probes
 
 ```json

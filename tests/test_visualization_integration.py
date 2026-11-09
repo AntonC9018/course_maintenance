@@ -10,7 +10,7 @@ import unittest
 from publishing.visualization_config import (
     VisualizationOptions, contained_path, parse_visualizations,
 )
-from publishing.visualization_tags import project_visualizations, scan_document
+from publishing.visualization_tags import scan_document
 from publishing.visualization_traces import (
     VisualizationError, check_tags, ci_outputs, generate, trace_key, validate,
 )
@@ -38,13 +38,6 @@ class ScanTest(unittest.TestCase):
                 self.assertEqual(text[tag.start:tag.end], marker)
                 self.assertEqual(text[tag.body_start:tag.body_end].strip(),
                                  'link' if template else '')
-
-    def test_projection_drops_tags_and_leaves_fenced_markers(self):
-        projected = project_visualizations(document())
-        self.assertNotIn('visualization', projected)
-        self.assertIn('</details>', projected)
-        fenced = '```html\n' + document() + '\n```\n'
-        self.assertEqual(project_visualizations(fenced), fenced)
 
     def test_answer_code_and_fake_html_in_code_do_not_replace_source(self):
         text = ('```cpp\nint a{5}; // <details>\n```\n<details>\n'

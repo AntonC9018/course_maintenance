@@ -93,14 +93,31 @@ class Tracer:
         return output
 
 
+class TraceStore:
+    """Where the trace of a tag lives, whether or not it has been generated."""
+
+    def __init__(self, repo: Path, options: VisualizationOptions, command=None):
+        self.directory = contained_path(repo, options.traces)
+        self.tracer = Tracer(repo, options, command)
+
+    def path(self, tag: Tag) -> Path:
+        key = trace_key(tag.source.source, tag.template, self.tracer.revision)
+        return self.directory / f'{key}.json'
+
+    def load(self, tag: Tag) -> str | None:
+        path = self.path(tag)
+        return path.read_text(encoding='utf-8') if path.is_file() else None
+
+
 class Traces:
     """Tagged examples of a course, and where their traces are stored."""
 
     def __init__(self, repo: Path, config, selected_paths=None, *, command=None):
         self.repo = repo
         self.options: VisualizationOptions = config.visualizations
-        self.directory = contained_path(repo, self.options.traces)
-        self.tracer = Tracer(repo, self.options, command)
+        self.store = TraceStore(repo, self.options, command)
+        self.directory = self.store.directory
+        self.tracer = self.store.tracer
         self.examples: list[TaggedExample] = []
         self.errors: list[str] = []
         selected = None if selected_paths is None else {Path(p).resolve() for p in selected_paths}
@@ -110,15 +127,12 @@ class Traces:
                 self.errors.extend(scanned.errors)
                 self.examples.extend(TaggedExample(path, tag) for tag in scanned.tags)
 
-    def key(self, example: TaggedExample) -> str:
-        return trace_key(example.tag.source.source, example.tag.template, self.tracer.revision)
-
     def path(self, example: TaggedExample) -> Path:
-        return self.directory / f'{self.key(example)}.json'
+        return self.store.path(example.tag)
 
     def cache_key(self) -> str:
         """One key for the whole trace set, for restoring the CI cache."""
-        keys = sorted({self.key(example) for example in self.examples})
+        keys = sorted({self.path(example).stem for example in self.examples})
         return hashlib.sha256('\n'.join(keys).encode()).hexdigest()
 
     def missing(self) -> list[str]:

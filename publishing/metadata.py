@@ -487,6 +487,17 @@ def collect_metadata_state(course_repo: Path, config, inventory,
     return final, errors, missing
 
 
+def _with_visualization_links(config, rel: str, text: str, lang: str,
+                              slug: str, pages_url: str) -> str:
+    """Tag bodies link to the same example on the site (configured roots only)."""
+    options = config.visualizations
+    if options is None or not any(rel == root or rel.startswith(root + "/")
+                                  for root in options.roots):
+        return text
+    from .visualization_site import with_site_links
+    return with_site_links(text, lang, expected_backlink_url(pages_url, slug))
+
+
 def validate_all_metadata(course_repo: Path, config, inventory,
                           pages_url: str) -> list[str]:
     """Full read-only validation for `publishing check` (META-7).
@@ -514,6 +525,12 @@ def validate_all_metadata(course_repo: Path, config, inventory,
                                  final[rel], pages_url, config.backlink_labels)
         if prob is not None:
             errs.append(f"{rel}: [META-7] {prob}; {hint}")
+        linked = _with_visualization_links(config, rel, text, lesson.language,
+                                           final[rel], pages_url)
+        if linked != text:
+            line = next(i for i, (a, b) in enumerate(zip(text, linked)) if a != b)
+            errs.append(f"{rel}:{text.count(chr(10), 0, line) + 1}: [VIS] missing or stale "
+                        f"site link in a visualization tag; {hint}")
     # `collect` derives missing slugs without erroring; for the read-only
     # check a missing slug is itself a META-7 error requiring generation.
     # Report it even when a backlink error already exists for the same file
@@ -577,6 +594,8 @@ def run_metadata_generate(course_repo: Path, args) -> int:
         slug_missing = rel in missing
         new_text = build_new_text(original, final[rel], lesson.language,
                                   identity.pages_url, slug_missing, config.backlink_labels)
+        new_text = _with_visualization_links(config, rel, new_text, lesson.language,
+                                             final[rel], identity.pages_url)
         if new_text != original:
             planned.append((lesson.source_path, new_text))
 

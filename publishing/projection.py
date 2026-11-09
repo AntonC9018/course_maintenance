@@ -66,7 +66,6 @@ from pathlib import Path
 from maintenance.patterns import FENCE_RE, ORDERED_PATTERN
 
 from .metadata import BACKLINK_END, BACKLINK_START, split_frontmatter
-from .visualization_tags import project_visualizations
 
 _FIX_PROJECTION = "operation: projection build"
 _ATX_RE = re.compile(r'^(\s{0,3})(#{1,6})(?:\s+(.*))?$')
@@ -690,6 +689,10 @@ def collect_projection_data(course_repo: Path, config, identity,
     mermaid_files: dict[str, str] = {}
     nav: list[dict] = []
     errors: list[str] = []
+    players = None
+    if config.visualizations is not None:
+        from .visualization_traces import TraceStore, generate_command
+        players = TraceStore(repo, config.visualizations)
 
     for rel in sorted(final_slugs):
         lesson = by_rel.get(rel)
@@ -713,7 +716,7 @@ def collect_projection_data(course_repo: Path, config, identity,
         else:
             combined = ('\n'.join(stripped) + '\n') if stripped else ''
         rewritten, file_copies, link_errors = rewrite_document(
-            lesson.source_path, project_visualizations(combined), link_index)
+            lesson.source_path, combined, link_index)
         for e in link_errors:
             errors.append(e)
         if link_errors:
@@ -748,6 +751,17 @@ def collect_projection_data(course_repo: Path, config, identity,
             if svg_rel not in mermaid_files:
                 mermaid_files[svg_rel] = svg_content
         converted = converted2
+        if players is not None:
+            # Last, so link and math rewriting never see the embedded traces.
+            from .visualization_site import with_players
+            body, missing = with_players('\n'.join(converted), players.load)
+            if missing:
+                # Projected line numbers differ from the lesson's, so count
+                # instead; `publishing check` names each tag's source line.
+                errors.append(f"{rel}: [VIS] {len(missing)} tag(s) without a trace; run "
+                              f"`{generate_command(config.visualizations)}`")
+                continue
+            converted = body.split('\n')
         order = orders.get(rel, 1)
         if has_fm2:
             fm3 = inject_order(fm2, order)
