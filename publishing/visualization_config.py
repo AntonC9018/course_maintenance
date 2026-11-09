@@ -1,11 +1,11 @@
 """Optional course-owned tracer policy, independent of the tracer's own toolchain."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 import re
 
-FIELDS = frozenset({'templates', 'roots', 'shell', 'traces'})
+FIELDS = frozenset({'templates', 'roots', 'shell', 'traces', 'labels'})
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,8 @@ class VisualizationOptions:
     shell: str = 'visualizations'
     # Generated, content-addressed traces; cached by CI and never committed.
     traces: str = '.cache/visualizations'
+    # Site-link labels per template override, then per language: {"layout": {"en": "..."}}.
+    labels: dict[str, dict[str, str]] = field(default_factory=dict)
 
 
 def contained_path(repo: Path, value: str) -> Path:
@@ -51,10 +53,29 @@ def parse_visualizations(raw: object, repo: Path) -> VisualizationOptions | None
     shell = raw.get('shell', defaults.shell)
     if not isinstance(shell, str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_-]*', shell):
         raise ValueError('visualizations.shell must name a dev shell of the course flake')
+    labels = _parse_labels(raw.get('labels', {}))
     for value in [templates, traces, *roots]:
         contained_path(repo, value)
+    for root in roots:
+        # A mistyped root would match no lessons and silently check nothing.
+        if not (repo / root).is_dir():
+            raise ValueError(f'visualizations.roots entry is not a directory: {root!r}')
     for i, root in enumerate(roots):
         if any(root.startswith(other + '/') or other.startswith(root + '/')
                for other in roots[:i]):
             raise ValueError('visualizations.roots must not overlap')
-    return VisualizationOptions(templates, tuple(roots), shell, traces)
+    return VisualizationOptions(templates, tuple(roots), shell, traces, labels)
+
+
+def _parse_labels(raw: object) -> dict[str, dict[str, str]]:
+    """Labels must stay one line of link text, so they cannot break the Markdown link."""
+    if not isinstance(raw, dict):
+        raise ValueError('visualizations.labels must map template names to language labels')
+    for template, by_language in raw.items():
+        if not re.fullmatch(r'[a-z][a-z0-9-]*', template) or not isinstance(by_language, dict):
+            raise ValueError(f'visualizations.labels.{template} must map languages to labels')
+        for language, label in by_language.items():
+            if not isinstance(label, str) or not label.strip() or re.search(r'[\[\]\n\r]', label):
+                raise ValueError(f'visualizations.labels.{template}.{language} must be one line '
+                                 'of text without brackets')
+    return {template: dict(by_language) for template, by_language in raw.items()}

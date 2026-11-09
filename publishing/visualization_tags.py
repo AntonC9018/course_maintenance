@@ -193,9 +193,3 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
         result.errors.append(f'{path}:{fence[-1]}: [VIS] unclosed code fence after a visualization')
     return result
 
-
-def project_visualizations(text: str) -> str:
-    """Drop tags from the site projection until the site player renders them."""
-    for tag in reversed(scan_document(text).tags):
-        text = text[:tag.start] + text[tag.end:]
-    return text
