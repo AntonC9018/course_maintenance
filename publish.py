@@ -150,13 +150,13 @@ register("ci", "prepare", run_ci_prepare, "validate course policy and expose sha
 register("toolchain", "show", run_toolchain_show, "expose shared runtime/browser pins and cache key")
 
 
-from publishing.visualization_assets import (run_visualizations_check,
+from publishing.visualization_traces import (run_visualizations_check,
                                               run_visualizations_generate)
 
 register("visualizations", "generate", run_visualizations_generate,
-         "render and upload tagged visualization sources locally")
+         "trace tagged examples that have no stored trace (needs the course toolchain)")
 register("visualizations", "check", run_visualizations_check,
-         "validate referenced visualization assets without rendering")
+         "check that every tag is well formed and has its trace, without tracing")
 
 
 def build_parser():

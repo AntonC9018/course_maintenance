@@ -101,18 +101,17 @@ def run(paths, *, root: Path, check_only: bool, quiet: bool,
         print('--- links (skipped) ---')
         links_fixed, links_broken = 0, 0
 
-    # Visualizations are a course-owned optional post-link stage. Read-only
-    # maintenance checks local metadata; publishing check verifies remote assets.
+    # Visualizations are a course-owned optional post-link stage. Maintenance
+    # checks tag syntax only; tracing needs the course toolchain and runs in CI.
     visualization_errors = []
     if (root / "course-publishing.json").is_file():
         from publishing.config import ConfigError, load_config
-        from publishing.visualization_assets import generate, validate
+        from publishing.visualization_traces import check_tags
         try:
             config = load_config(root)
             if config.visualizations is not None:
                 print('--- visualizations ---')
-                operation = validate if check_only else generate
-                visualization_errors = operation(root, config, selected_paths=md_files)
+                visualization_errors = check_tags(root, config, selected_paths=md_files)
         except ConfigError as exc:
             visualization_errors = [str(exc)]
         for error in visualization_errors:

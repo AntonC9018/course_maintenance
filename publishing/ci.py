@@ -60,16 +60,18 @@ def check_pr_ready(config) -> None:
 def run_ci_prepare(course_repo: Path, args) -> int:
     """Validate caller policy and expose shared pins before dependency setup."""
     from .config import ConfigError, load_config
+    from .visualization_traces import VisualizationError, ci_outputs
     try:
         config = load_config(course_repo)
         check_pr_ready(config)
-    except (ConfigError, OSError, ValueError, KeyError) as exc:
+        visualizations = ci_outputs(course_repo, config)
+    except (ConfigError, VisualizationError, OSError, ValueError, KeyError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    return run_toolchain_show(course_repo, args)
+    return run_toolchain_show(course_repo, args, visualizations)
 
 
-def run_toolchain_show(course_repo, args) -> int:
+def run_toolchain_show(course_repo, args, extra: dict[str, str] | None = None) -> int:
     """Expose the shared version/lockfile pins without a course configuration."""
     outputs = {
         "python_version": PINNED_PYTHON,
@@ -77,6 +79,7 @@ def run_toolchain_show(course_repo, args) -> int:
         "npm_lockfile": str(lockfile_path().resolve()),
         "browser_cache_key": browser_cache_key() + "-" + file_sha256(lockfile_path()),
     }
+    outputs.update(extra or {})
     for key, value in outputs.items():
         print(f"{key}={value}")
     if os.environ.get("GITHUB_OUTPUT"):

@@ -177,18 +177,15 @@ class TestHeadingShift(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_managed_attachment_becomes_player_only_in_projection(self):
-        url = 'https://github.com/user-attachments/assets/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+    def test_visualization_tag_is_dropped_only_in_projection(self):
+        tag = '<!-- <visualization> -->\n\nbody\n\n<!-- </visualization> -->'
         body = ('# Trace\n\n```cpp\nint a{5};\na = 7;\n```\n\n<details>\n'
-                '<summary>Execution trace</summary>\n\n'
-                '<!-- <visualization type="animation"> -->\n\n'
-                f'{url}\n\n<!-- </visualization> -->\n\n</details>\n')
+                '<summary>Execution trace</summary>\n\n' + tag + '\n\n</details>\n')
         projected = self._project_full(body, title='Trace')
-        self.assertIn('<video controls preload="metadata"', projected)
-        self.assertIn(f'src="{url}"></video>', projected)
+        self.assertNotIn('visualization', projected)
+        self.assertNotIn('body', projected)
         original = (self.root / 'en/labs/common/01_computer_architecture.md').read_text()
-        self.assertIn('\n\n' + url + '\n', original)
-        self.assertNotIn('<video', original)
+        self.assertIn(tag, original)
 
     def _project_full(self, source_body: str, title="T") -> str:
         make_repo(self.root, {
