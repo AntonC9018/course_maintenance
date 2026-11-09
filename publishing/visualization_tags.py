@@ -21,10 +21,8 @@ _DETAILS = re.compile(r'</?details\b[^>]*>|</?visualization\b[^>]*>', re.IGNOREC
 _MENTIONS_TAG = re.compile(r'<\s*/?\s*visualization\b', re.IGNORECASE)
 _OPENING = re.compile(r'<visualization(?:\s+template="([a-z][a-z0-9-]*)")?\s*>')
 _CLOSING = re.compile(r'</visualization\s*>', re.IGNORECASE)
-_CLOSE_MARKER = re.compile(r'<!--\s*</visualization\s*>\s*-->', re.IGNORECASE)
-_BLOCK_BOUNDARY = re.compile(
-    r'<!--\s*<\s*/?\s*visualization\b|</?details\b|^ {0,3}(?:`{3,}|~{3,})',
-    re.IGNORECASE | re.MULTILINE)
+_BLOCK_BOUNDARY = re.compile(r'</?details\b|^ {0,3}(?:`{3,}|~{3,})',
+                             re.IGNORECASE | re.MULTILINE)
 
 
 def normalize_source(source: str) -> str:
@@ -75,6 +73,30 @@ def _tag_problem(content: str, depth: int, source: Fence | None) -> str | None:
     if source.language not in CPP_LANGUAGES:
         return 'nearest preceding outside-details fence must be C++'
     return None
+
+
+def _closing_marker(text: str, start: int) -> tuple[int, int] | None:
+    """The closing marker's span, skipping ordinary comments in the body.
+
+    Block boundaries count only outside comments, so the body cannot leave
+    its details block or fence; another visualization marker ends the search.
+    """
+    cursor = start
+    while True:
+        comment = text.find('<!--', cursor)
+        if _BLOCK_BOUNDARY.search(text, cursor, len(text) if comment < 0 else comment):
+            return None
+        if comment < 0:
+            return None
+        close = text.find('-->', comment + 4)
+        if close < 0:
+            return None
+        content = text[comment + 4:close].strip()
+        if _CLOSING.fullmatch(content):
+            return comment, close + 3
+        if _MENTIONS_TAG.search(content):
+            return None
+        cursor = close + 3
 
 
 def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
@@ -134,9 +156,8 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
                 content = text[comment + 4:close].strip()
                 if _MENTIONS_TAG.search(content):
                     problem = _tag_problem(content, depth, last_source)
-                    closing = None if problem else _CLOSE_MARKER.search(text, finish)
-                    if not problem and (closing is None
-                                        or _BLOCK_BOUNDARY.search(text, finish, closing.start())):
+                    closing = None if problem else _closing_marker(text, finish)
+                    if not problem and closing is None:
                         problem = 'opening marker needs a closing <!-- </visualization> --> before the next block'
                     if problem:
                         error(comment, problem)
@@ -144,10 +165,10 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
                             return result
                     else:
                         result.tags.append(Tag(
-                            comment, closing.end(), text.count('\n', 0, comment) + 1,
+                            comment, closing[1], text.count('\n', 0, comment) + 1,
                             _OPENING.fullmatch(content).group(1), last_source,
-                            finish, closing.start()))
-                        finish = closing.end()
+                            finish, closing[0]))
+                        finish = closing[1]
                 cursor = finish
                 if finish > line_end:
                     while index < len(lines) and position + len(lines[index]) < finish:

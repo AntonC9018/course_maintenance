@@ -108,6 +108,13 @@ class ScanTest(unittest.TestCase):
         self.assertIn('inside', scan_document('```cpp\nint a;\n```\n' + TAG).errors[0])
         self.assertIn('no preceding', scan_document('<details>\n' + TAG).errors[0])
 
+    def test_ordinary_comments_in_the_body_are_skipped(self):
+        marker = ('<!-- <visualization> -->\n<!-- mentions </details>\n```\n-->\n'
+                  '<!-- </visualization> -->')
+        result = scan_document(document(marker=marker))
+        self.assertEqual(result.errors, [])
+        self.assertEqual(len(result.tags), 1)
+
     def test_closing_marker_cannot_cross_details(self):
         text = document(marker='<!-- <visualization> -->') + '\n<!-- </visualization> -->\n'
         self.assertTrue(scan_document(text).errors)
