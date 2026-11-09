@@ -70,8 +70,9 @@ nearest preceding heading's anchor, so a GitHub reader can open the player.
 <!-- </visualization> -->
 ```
 
-`publishing check` requires the body to be exactly that link. Anchors follow github-slugger, as
-Astro does, including `-1` suffixes for repeated headings.
+`publishing check` requires the body to be exactly that link. Anchors follow Astro: smartypants
+dashes, then github-slugger, including `-1` suffixes for repeated headings. After a real build,
+`site build` also checks every link's page and heading id against the generated HTML.
 
 The site projection replaces each tag, link included, with one raw-HTML line embedding its trace:
 

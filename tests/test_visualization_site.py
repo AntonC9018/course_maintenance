@@ -8,7 +8,7 @@ import unittest
 
 from publishing.site_assets import head_entries, parse_site_assets
 from publishing.visualization_site import (
-    heading_anchors, link_body, player, with_players, with_site_links,
+    broken_site_links, heading_anchors, link_body, player, with_players, with_site_links,
 )
 from tests.helpers import run_publish, write
 from tests.test_publishing_projection import (
@@ -30,9 +30,14 @@ class AnchorTest(unittest.TestCase):
             ('### 4. Assigning one variable to another', '4-assigning-one-variable-to-another'),
             ('### 5. Literals, variables and operators are expressions',
              '5-literals-variables-and-operators-are-expressions'),
-            ('## `const` and `int&` -- references', 'const-and-int----references'),
+            ('## `const` and `int&` -- references', 'const-and-int--references'),
+            ('## `a--b` --- c', 'a--b--c'),
             ('### 1. Объявление переменной', '1-объявление-переменной'),
             ('### **Bold** [link](x.md) _it_', 'bold-link-it'),
+            ('## `vector<int>`', 'vectorint'),
+            ('## A &amp; B', 'a--b'),
+            ('## `&amp;` and \\*x\\*', 'amp-and-x'),
+            ('## ``a ` b``', 'a--b'),
         ]:
             with self.subTest(heading=heading):
                 self.assertEqual(heading_anchors(heading + '\n')[0][1], expected)
@@ -57,6 +62,24 @@ class LinkTest(unittest.TestCase):
         self.assertIn('[▶ Пошаговое выполнение на сайте курса](' + PAGE + ')',
                       with_site_links(lesson(heading=''), 'ru', PAGE))
         self.assertIn('[▶ Step through', link_body('de', PAGE, None))
+
+
+class BuiltSiteTest(unittest.TestCase):
+    def test_links_are_checked_against_built_heading_ids(self):
+        from types import SimpleNamespace
+        from publishing.visualization_config import VisualizationOptions
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            write(root / 'en/lab.md', with_site_links(lesson(), 'en', PAGE))
+            config = SimpleNamespace(visualizations=VisualizationOptions(roots=('en',)))
+            page = root / 'dist/en/cpp/labs/variables/index.html'
+            self.assertIn('missing page', broken_site_links(root, config, 'https://o.github.io/r',
+                                                            root / 'dist')[0])
+            write(page, '<h3 id="4-assigning-one-variable">')
+            self.assertIn('not a heading id', broken_site_links(
+                root, config, 'https://o.github.io/r', root / 'dist')[0])
+            write(page, '<h3 id="4-assigning-one-variable-to-another">')
+            self.assertEqual(broken_site_links(root, config, 'https://o.github.io/r', root / 'dist'), [])
 
 
 class PlayerTest(unittest.TestCase):

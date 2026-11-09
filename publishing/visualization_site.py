@@ -7,6 +7,7 @@ the example's trace; the course's site assets render it.
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 import unicodedata
@@ -21,13 +22,37 @@ _HEADING = re.compile(r'^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$')
 _FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})')
 
 
-def _plain(heading: str) -> str:
-    """The text content Markdown renders for a heading's inline syntax."""
-    text = re.sub(r'!?\[([^\]]*)\]\([^)]*\)', r'\1', heading)
-    text = re.sub(r'(`+)(.*?)\1', r'\2', text)
+_CODE_SPAN = re.compile(r'(`+)(.+?)(?<!`)\1(?!`)')
+
+
+def _plain_inline(text: str) -> str:
+    """Text content of inline Markdown outside code spans."""
+    text = re.sub(r'!?\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    text = re.sub(r'<[^>]*>', '', text)
     text = re.sub(r'(\*\*|__|~~)(.*?)\1', r'\2', text)
     text = re.sub(r'(?<!\w)[*_](?=\S)(.*?)(?<=\S)[*_](?!\w)', r'\1', text)
-    return re.sub(r'<[^>]*>', '', text)
+    # Astro's smartypants turns dash runs into dashes the slugger then drops.
+    text = text.replace('---', '\u2014').replace('--', '\u2013')
+    text = re.sub(r'\\([!-/:-@\[-`{-~])', r'\1', text)
+    return html.unescape(text)
+
+
+def _plain(heading: str) -> str:
+    """The text content Markdown renders for a heading's inline syntax.
+
+    Code spans are literal: no entities, tags or emphasis inside them.
+    """
+    parts = []
+    last = 0
+    for span in _CODE_SPAN.finditer(heading):
+        parts.append(_plain_inline(heading[last:span.start()]))
+        content = span.group(2)
+        if content.startswith(' ') and content.endswith(' ') and content.strip():
+            content = content[1:-1]
+        parts.append(content)
+        last = span.end()
+    parts.append(_plain_inline(heading[last:]))
+    return ''.join(parts)
 
 
 def _slug(text: str) -> str:
@@ -108,3 +133,36 @@ def with_players(text: str, load) -> tuple[str, list[Tag]]:
             continue
         text = text[:tag.start] + player(trace) + text[tag.end:]
     return text, missing[::-1]
+
+
+def broken_site_links(repo, config, pages_url: str, dist) -> list[str]:
+    """Tag links whose page or heading id is missing from the built site.
+
+    The anchors are computed, not rendered, so this checks them against
+    the renderer's own output after a real build.
+    """
+    from pathlib import Path
+    from .visualization_traces import markdown_files
+    if config.visualizations is None:
+        return []
+    prefix = pages_url.rstrip('/') + '/'
+    link = re.compile(r'\]\((' + re.escape(prefix) + r'[^)#\s]*)(?:#([^)\s]+))?\)')
+    errors = []
+    ids: dict[Path, set[str]] = {}
+    for path in markdown_files(repo, config.visualizations):
+        text = path.read_text(encoding='utf-8')
+        for tag in scan_document(text).tags:
+            found = link.search(text, tag.body_start, tag.body_end)
+            if found is None:
+                continue  # publishing check reports missing links
+            page = Path(dist) / found.group(1)[len(prefix):] / 'index.html'
+            if page not in ids:
+                ids[page] = (set(re.findall(r'\bid="([^"]+)"', page.read_text(encoding='utf-8')))
+                             if page.is_file() else None)
+            where = f'{path.relative_to(repo)}:{tag.line}: [VIS]'
+            if ids[page] is None:
+                errors.append(f'{where} site link points to a missing page: {found.group(1)}')
+            elif found.group(2) and found.group(2) not in ids[page]:
+                errors.append(f'{where} site link anchor #{found.group(2)} is not a heading id '
+                              f'on the built page')
+    return errors

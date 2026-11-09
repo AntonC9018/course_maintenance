@@ -653,6 +653,16 @@ def run_site_build(course_repo: Path, args) -> int:
         for msg in _forbidden_dist:
             print(f"error: {msg}", file=sys.stderr)
         return 1
+    # Visualization links carry computed anchors; check them against the
+    # renderer's real heading ids (only after a real build).
+    if (out_resolved / "dist" / "index.html").is_file():
+        from .visualization_site import broken_site_links
+        broken = broken_site_links(repo, config, identity.pages_url,
+                                   out_resolved / "dist")
+        if broken:
+            for msg in broken:
+                print(f"error: {msg}", file=sys.stderr)
+            return 1
     n_lessons = sum(1 for k in files if k.startswith("src/content/docs/"))
     print(f"site build: OK ({n_lessons} lesson(s)) in {out_resolved} "
           f"(dist below)")
