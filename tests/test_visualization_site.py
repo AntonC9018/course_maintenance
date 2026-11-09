@@ -75,6 +75,7 @@ class LinkTest(unittest.TestCase):
         from publishing.visualization_config import parse_visualizations
         base = {'roots': ['en']}
         with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / 'en').mkdir()
             self.assertEqual(parse_visualizations({**base, 'labels': {'layout': {'en': 'A'}}},
                                                   Path(tmp)).labels, {'layout': {'en': 'A'}})
             for labels in ([], {'Bad': {}}, {'layout': []}, {'layout': {'en': ''}},
@@ -190,6 +191,17 @@ class EndToEndTest(unittest.TestCase):
                       '{"format":1,"source":"int a = 5;\\na = 7;\\n"}</script></div>', projected)
         self.assertNotIn('Step through', projected)
         self.assertNotIn('visualization> -->', projected)
+
+    def test_a_corrupt_trace_is_a_projection_error_not_a_crash(self):
+        self.assertEqual(self.publish('metadata', 'generate').returncode, 0)
+        self.assertEqual(self.publish('visualizations', 'generate').returncode, 0)
+        for trace in (self.root / '.cache/visualizations').glob('*.json'):
+            trace.write_text('not json')
+        build = run_publish('projection', 'build', '--course-repo', str(self.root),
+                            '--out', str(self.out))
+        self.assertNotEqual(build.returncode, 0)
+        self.assertIn('[VIS] cannot embed traces', build.stdout + build.stderr)
+        self.assertNotIn('Traceback', build.stderr)
 
 
 if __name__ == '__main__':

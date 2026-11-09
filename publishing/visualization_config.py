@@ -56,6 +56,10 @@ def parse_visualizations(raw: object, repo: Path) -> VisualizationOptions | None
     labels = _parse_labels(raw.get('labels', {}))
     for value in [templates, traces, *roots]:
         contained_path(repo, value)
+    for root in roots:
+        # A mistyped root would match no lessons and silently check nothing.
+        if not (repo / root).is_dir():
+            raise ValueError(f'visualizations.roots entry is not a directory: {root!r}')
     for i, root in enumerate(roots):
         if any(root.startswith(other + '/') or other.startswith(root + '/')
                for other in roots[:i]):
