@@ -35,6 +35,10 @@ It replaces the old per-task scripts (`rename_files.py`, `fix_files.py`,
 - **links**: repairs file links broken by renames and anchors broken by
   heading resequencing. Skips external URLs and code blocks/spans.
   `BROKEN` lines it cannot fix need a human — report them, don't guess.
+- **visualizations** (course-owned, after links): checks tag syntax and
+  re-points step-through site links at the renumbered heading anchors.
+  `--check` sees pre-renumbering headings, so a stale link shows up only
+  once the headings are fixed.
 
 ## When editing maintenance code
 

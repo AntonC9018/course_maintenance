@@ -66,7 +66,7 @@ class LessonInventory:
         return len(self.lessons)
 
 
-def _language_for(rel: str, config: PublishingConfig) -> str | None:
+def language_for(rel: str, config: PublishingConfig) -> str | None:
     best: str | None = None
     best_len = -1
     for lang in config.languages:
@@ -158,7 +158,7 @@ def build_inventory(course_repo: Path | str,
                     continue
                 # Guard against symlinks/roots overlap placing a file under
                 # a different language than walked: assign by longest prefix.
-                assigned = _language_for(rel, config)
+                assigned = language_for(rel, config)
                 if assigned is None:
                     continue
                 found.append(Lesson(source_path=p.resolve(),

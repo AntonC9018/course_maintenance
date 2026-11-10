@@ -104,6 +104,7 @@ def run(paths, *, root: Path, check_only: bool, quiet: bool,
     # Visualizations are a course-owned optional post-link stage. Maintenance
     # checks tag syntax only; tracing needs the course toolchain and runs in CI.
     visualization_errors = []
+    visualization_links = 0
     if (root / "course-publishing.json").is_file():
         from publishing.config import ConfigError, load_config
         from publishing.visualization_traces import check_tags
@@ -112,6 +113,13 @@ def run(paths, *, root: Path, check_only: bool, quiet: bool,
             if config.visualizations is not None:
                 print('--- visualizations ---')
                 visualization_errors = check_tags(root, config, selected_paths=md_files)
+                # Heading renumbering moves the anchors in step-through site URLs.
+                from publishing.metadata import refresh_visualization_links
+                relinked = refresh_visualization_links(root, config, md_files, check_only)
+                verb = 'WOULD-FIX' if check_only else 'FIXED'
+                for path in relinked:
+                    print(f'{verb} step-through links in {path}')
+                visualization_links = len(relinked)
         except ConfigError as exc:
             visualization_errors = [str(exc)]
         for error in visualization_errors:
@@ -121,12 +129,14 @@ def run(paths, *, root: Path, check_only: bool, quiet: bool,
     print(f'\n{mode}rename: {rename_count} file(s), '
           f'convert: {convert_count} file(s), '
           f'headings: {headings_count} file(s), '
-          f'links: {links_fixed} fixed / {links_broken} broken '
+          f'links: {links_fixed} fixed / {links_broken} broken, '
+          f'step-through links: {visualization_links} file(s) '
           f'in {len(md_files)} markdown file(s).')
     if rename_errors:
         print(f'{len(rename_errors)} rename error(s).')
     if check_only and (rename_count or convert_count or headings_count
-                       or links_fixed or links_broken or rename_errors):
+                       or links_fixed or links_broken or visualization_links
+                       or rename_errors):
         return 1
     if rename_errors or visualization_errors:
         return 1

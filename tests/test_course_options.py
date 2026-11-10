@@ -75,6 +75,23 @@ class TestCourseOptions(unittest.TestCase):
                 self.assertEqual(result.returncode, expected, result.stdout + result.stderr)
                 self.assertEqual((self.root / "labs/01_start.md").read_text(), text)
 
+    def test_maintenance_repoints_step_through_links_after_renumbering(self):
+        from tests.helpers import run_maintain
+        self.config["visualizations"] = {"roots": ["labs"]}
+        self.save()
+        url = "https://example.github.io/course/ru/labs/start/"
+        tag = "<details>\n<summary>Trace</summary>\n\n<!-- <visualization> -->\n\n[▶ Пошаговое выполнение на сайте курса]({})\n\n<!-- </visualization> -->\n\n</details>\n"
+        lesson = self.root / "labs/01_start.md"
+        write(lesson, "---\nslug: ru/labs/start\n---\n# 1. Start\n## One\n### 1. First\n### 1. Second\n"
+              "```cpp\nint a = 1;\n```\n\n" + tag.format(url + "#1-second"))
+        result = run_maintain("--root", str(self.root), str(lesson))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        text = lesson.read_text()
+        self.assertIn("### 2. Second", text)
+        self.assertIn("/ru/labs/start/#2-second)", text)
+        again = run_maintain("--root", str(self.root), "--check", str(lesson))
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+
     def test_explicit_paths_fail_closed(self):
         for paths in (["missing"], ["../course"], ["course_maintenance"], ["."], [], ["placeholder.txt"]):
             with self.subTest(paths=paths):

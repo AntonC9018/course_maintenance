@@ -498,6 +498,38 @@ def _with_visualization_links(config, rel: str, text: str, lang: str,
     return with_site_links(text, lang, expected_backlink_url(pages_url, slug), options.labels)
 
 
+def refresh_visualization_links(course_repo: Path, config, paths,
+                                check_only: bool) -> list[Path]:
+    """Re-point step-through links in `paths` at the current heading anchors.
+
+    Used by maintenance after heading renumbering, which changes the anchors
+    these site URLs embed. Files without a slug are skipped. Returns the files
+    whose links are (or, with `check_only`, would be) rewritten.
+    """
+    from .identity import infer_identity
+    from .inventory import language_for
+    repo = Path(course_repo).resolve()
+    pages_url = infer_identity(repo, config).pages_url
+    changed = []
+    for path in paths:
+        path = Path(path).resolve()
+        try:
+            rel = path.relative_to(repo).as_posix()
+        except ValueError:
+            continue
+        text = path.read_text(encoding="utf-8")
+        _has_fm, slug, _count, _end = parse_slug_value(text)
+        lang = language_for(rel, config)
+        if not slug or lang is None:
+            continue
+        linked = _with_visualization_links(config, rel, text, lang, slug, pages_url)
+        if linked != text:
+            changed.append(path)
+            if not check_only:
+                path.write_text(linked, encoding="utf-8")
+    return changed
+
+
 def validate_all_metadata(course_repo: Path, config, inventory,
                           pages_url: str) -> list[str]:
     """Full read-only validation for `publishing check` (META-7).
