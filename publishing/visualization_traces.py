@@ -70,12 +70,12 @@ class Tracer:
     def __init__(self, repo: Path, options: VisualizationOptions, command=None):
         mjs = contained_path(repo, options.templates + '/generate.mjs')
         py = contained_path(repo, options.templates + '/generate.py')
-        if mjs.is_file() or not py.is_file():
-            self.script = mjs
-            self.runner = 'node'
-        else:
+        if py.is_file() or not mjs.is_file():
             self.script = py
             self.runner = sys.executable
+        else:
+            self.script = mjs
+            self.runner = 'node'
         self.command = command or _command
         self._revision = None
 
