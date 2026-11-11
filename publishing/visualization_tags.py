@@ -7,6 +7,7 @@ A tag is two HTML comments inside an answer-style ``<details>`` block::
     <!-- </visualization> -->
 
 ``template="name"`` on the opening marker overrides the tracer's own choice.
+``types`` asks the tracer to show types: for an example that is about them.
 The source is the nearest preceding top-level code fence, which must be C++.
 """
 from __future__ import annotations
@@ -19,7 +20,7 @@ CPP_LANGUAGES = frozenset({'cpp', 'c++', 'cxx'})
 _OPEN_FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})([^\n]*)$')
 _DETAILS = re.compile(r'</?details\b[^>]*>|</?visualization\b[^>]*>', re.IGNORECASE)
 _MENTIONS_TAG = re.compile(r'<\s*/?\s*visualization\b', re.IGNORECASE)
-_OPENING = re.compile(r'<visualization(?:\s+template="([a-z][a-z0-9-]*)")?\s*>')
+_OPENING = re.compile(r'<visualization(?:\s+template="(?P<template>[a-z][a-z0-9-]*)")?(?P<types>\s+types)?\s*>')
 _CLOSING = re.compile(r'</visualization\s*>', re.IGNORECASE)
 _BLOCK_BOUNDARY = re.compile(r'</?details\b|^ {0,3}(?:`{3,}|~{3,})',
                              re.IGNORECASE | re.MULTILINE)
@@ -50,6 +51,8 @@ class Tag:
     source: Fence
     body_start: int
     body_end: int
+    # Whether the example is about types, so the trace shows them.
+    types: bool = False
 
 
 @dataclass
@@ -65,7 +68,7 @@ def _tag_problem(content: str, depth: int, source: Fence | None) -> str | None:
     if '<!--' in content:
         return 'nested or unclosed visualization comment'
     if not _OPENING.fullmatch(content):
-        return 'expected <visualization> or <visualization template="name">'
+        return 'expected <visualization>, optionally with template="name" and then types'
     if depth == 0:
         return 'visualization must be inside a details block'
     if source is None:
@@ -164,10 +167,11 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
                         if problem.startswith('nested'):
                             return result
                     else:
+                        opening = _OPENING.fullmatch(content)
                         result.tags.append(Tag(
                             comment, closing[1], text.count('\n', 0, comment) + 1,
-                            _OPENING.fullmatch(content).group(1), last_source,
-                            finish, closing[0]))
+                            opening['template'], last_source,
+                            finish, closing[0], bool(opening['types'])))
                         finish = closing[1]
                 cursor = finish
                 if finish > line_end:

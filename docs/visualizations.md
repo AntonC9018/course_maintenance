@@ -54,7 +54,11 @@ a = 7;
 The opening and closing markers are separate HTML comments, so a body between them renders on
 GitHub. Maintenance owns that body (see below).
 Write `<!-- <visualization template="name"> -->` only when the tracer's own template choice is
-wrong; there are no other attributes or per-example parameters.
+wrong.
+Write `<!-- <visualization types> -->` when the example is about types: expressions of
+different types, a conversion, a value that cannot be stored because of its type. The trace
+then shows the type of every value and variable; elsewhere they would be noise. With both,
+`template` comes first. There are no other attributes or per-example parameters.
 
 The source is the nearest preceding code fence outside **all** `<details>` blocks; it must use
 `cpp`, `c++`, or `cxx`. A fence inside an answer cannot replace the source example. Markdown fences
@@ -89,7 +93,7 @@ The course's own player renders it; ship it through `site_assets`
 ## Traces
 
 A trace is stored at `<traces>/<key>.json`. The key hashes the normalized snippet, the template
-override and the tracer revision, which the course computes over its tracer sources and its
+override, the `types` attribute and the tracer revision, which the course computes over its tracer sources and its
 `flake.lock`. Languages that share a snippet therefore share a trace, and a moved tag keeps it.
 
 ```sh
@@ -110,7 +114,7 @@ python3 course_maintenance/publish.py visualizations check --course-repo .
 `generate.py` runs as a separate process with these operations:
 
 - `revision` prints a nonempty identifier that changes whenever traces could change.
-- `trace --source <file> [--template <name>]` prints the trace as JSON, or exits nonzero with the
+- `trace --source <file> [--template <name>] [--types]` prints the trace as JSON, or exits nonzero with the
   reason on standard error.
 
 ## CI

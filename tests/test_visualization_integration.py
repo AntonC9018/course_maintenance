@@ -39,6 +39,15 @@ class ScanTest(unittest.TestCase):
                 self.assertEqual(text[tag.body_start:tag.body_end].strip(),
                                  'link' if template else '')
 
+    def test_types_attribute_alone_and_after_a_template(self):
+        for opening, expected in [('<visualization>', (None, False)), ('<visualization types>', (None, True)),
+                                  ('<visualization template="memory" types>', ('memory', True)),
+                                  ('<visualization\n  types >', (None, True))]:
+            with self.subTest(opening=opening):
+                result = scan_document(document(marker=f'<!-- {opening} -->\n<!-- </visualization> -->'))
+                self.assertEqual(result.errors, [])
+                self.assertEqual((result.tags[0].template, result.tags[0].types), expected)
+
     def test_answer_code_and_fake_html_in_code_do_not_replace_source(self):
         text = ('```cpp\nint a{5}; // <details>\n```\n<details>\n'
                 '```cpp\nint fake{2};\n```\n<details>\n' + TAG + '\n</details>\n</details>')
@@ -90,6 +99,8 @@ class ScanTest(unittest.TestCase):
             ('<!-- <visualization template="Bad"> -->' + close, 'expected'),
             ('<!-- <visualization template="a" template="b"> -->' + close, 'expected'),
             ('<!-- <visualization /> -->' + close, 'expected'),
+            ('<!-- <visualization types template="a"> -->' + close, 'expected'),
+            ('<!-- <visualization types="yes"> -->' + close, 'expected'),
             ('<!-- <visualization> -->', 'closing'),
             ('<!-- </visualization> -->', 'no matching opening'),
             ('<!-- <visualization> -->\n' + TAG, 'closing'),
@@ -192,6 +203,8 @@ class GenerationTest(unittest.TestCase):
         self.assertNotEqual(base, trace_key(SOURCE + ' ', None, 'r1'))
         self.assertNotEqual(base, trace_key(SOURCE, 'memory', 'r1'))
         self.assertNotEqual(base, trace_key(SOURCE, None, 'r2'))
+        self.assertNotEqual(base, trace_key(SOURCE, None, 'r1', types=True))
+        self.assertEqual(base, trace_key(SOURCE, None, 'r1', types=False))
 
     def test_template_override_reaches_the_tracer(self):
         marker = '<!-- <visualization template="memory"> -->\n<!-- </visualization> -->'
@@ -199,6 +212,14 @@ class GenerationTest(unittest.TestCase):
         self.assertEqual(generate(self.root, self.config, command=self.command), [])
         self.assertIn(['--template', 'memory'], [c[-2:] for c in self.traced()])
         self.assertEqual(len(self.stored()), 2)
+
+    def test_types_reach_the_tracer_and_get_their_own_trace(self):
+        marker = '<!-- <visualization types> -->\n<!-- </visualization> -->'
+        (self.root / 'en' / 'lab.md').write_text(document(marker=marker))
+        self.assertEqual(generate(self.root, self.config, command=self.command), [])
+        self.assertEqual(sorted(c[-1] == '--types' for c in self.traced()), [False, True])
+        self.assertEqual(self.stored(), sorted(trace_key(SOURCE, None, self.revision, types) + '.json'
+                                               for types in (False, True)))
 
     def test_full_run_prunes_unused_traces_but_a_selected_run_does_not(self):
         self.traces.mkdir(parents=True)
