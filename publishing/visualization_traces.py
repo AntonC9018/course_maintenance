@@ -65,24 +65,31 @@ def _command(argv: list[str], *, timeout=120) -> str:
 
 
 class Tracer:
-    """The course-owned ``generate.py`` adapter, run as a separate process."""
+    """The course-owned ``generate.mjs`` (or ``generate.py``) adapter, run as a separate process."""
 
     def __init__(self, repo: Path, options: VisualizationOptions, command=None):
-        self.script = contained_path(repo, options.templates + '/generate.py')
+        mjs = contained_path(repo, options.templates + '/generate.mjs')
+        py = contained_path(repo, options.templates + '/generate.py')
+        if py.is_file() or not mjs.is_file():
+            self.script = py
+            self.runner = sys.executable
+        else:
+            self.script = mjs
+            self.runner = 'node'
         self.command = command or _command
         self._revision = None
 
     @property
     def revision(self) -> str:
         if self._revision is None:
-            revision = self.command([sys.executable, str(self.script), 'revision']).strip()
+            revision = self.command([self.runner, str(self.script), 'revision']).strip()
             if not revision:
                 raise VisualizationError('tracer revision must not be empty')
             self._revision = revision
         return self._revision
 
     def trace(self, source: Path, template: str | None) -> str:
-        argv = [sys.executable, str(self.script), 'trace', '--source', str(source)]
+        argv = [self.runner, str(self.script), 'trace', '--source', str(source)]
         if template:
             argv += ['--template', template]
         output = self.command(argv, timeout=600)

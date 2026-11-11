@@ -107,7 +107,7 @@ python3 course_maintenance/publish.py visualizations check --course-repo .
 
 ## The adapter contract
 
-`generate.py` runs as a separate process with these operations:
+`generate.py` (or `generate.mjs`) runs as a separate process with these operations:
 
 - `revision` prints a nonempty identifier that changes whenever traces could change.
 - `trace --source <file> [--template <name>]` prints the trace as JSON, or exits nonzero with the
