@@ -1017,5 +1017,91 @@ class TestLabNumberDisplay(unittest.TestCase):
         self.assertIn("1. First", notes)
 
 
+class TestPlaygroundIntegration(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name) / "course"
+        self.out = Path(self.tmp.name) / "site-out"
+        pg_files = {
+            "visualizations/player/playground.html": "<!doctype html><html></html>\n",
+            "visualizations/player/playground.css": "body {}\n",
+            "visualizations/player/playground.js": "console.log('pg');\n",
+            "visualizations/player/clang-worker.js": "console.log('w');\n",
+            "visualizations/player/player.css": ".course-visualization {}\n",
+            "visualizations/player/clang-trace-frontend.wasm": b"\x00asm\x01\x00\x00\x00",
+        }
+        cfg = dict(BASE_CONFIG)
+        cfg["playground"] = {
+            "source": "visualizations/player",
+            "route": "playground",
+            "sidebar_group": "cpp",
+            "label": "Execution Playground",
+        }
+        files = {**RICH_FILES, **pg_files}
+        make_repo(self.root, files, cfg=cfg)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_playground_config_sidebar_redirects_and_copy(self):
+        from publishing.config import load_config
+        from publishing.navigation import (
+            build_sidebars, build_starlight_sidebar, get_playground_redirects)
+        from publishing.site import run_site_build
+        config = load_config(self.root)
+        self.assertIsNotNone(config.playground)
+        self.assertEqual(config.playground.label, "Execution Playground")
+        self.assertEqual(config.playground.sidebar_group, "cpp")
+
+        self.assertEqual(
+            get_playground_redirects(config),
+            {
+                "/en/playground/": "/playground/?lang=en",
+                "/ru/playground/": "/playground/?lang=ru",
+            },
+        )
+
+        _c, _id, _fin, _f, _cp, nav = load_nav(self.root)
+        per_locale = build_sidebars(nav, config)
+        starlight = build_starlight_sidebar(per_locale, config)
+        cpp_group = next(g for g in starlight if g["label"] == "C++")
+        first = cpp_group["items"][0]
+        self.assertEqual(first["label"], "Execution Playground")
+        self.assertEqual(first["link"], "/playground/")
+        self.assertEqual(
+            first["attrs"],
+            {
+                "class": "cv-rainbow-link cv-rainbow-sidebar",
+                "data-astro-reload": "",
+            },
+        )
+
+        with mock.patch("publishing.site.run_npm_build", return_value=(0, "ok")):
+            from types import SimpleNamespace
+            code = run_site_build(self.root, SimpleNamespace(out=str(self.out), check=False))
+        self.assertEqual(code, 0)
+
+        cfg_text = (self.out / "astro.config.mjs").read_text(encoding="utf-8")
+        self.assertIn("cv-rainbow-link cv-rainbow-sidebar", cfg_text)
+        self.assertIn("cv-playground-url", cfg_text)
+        self.assertIn('"/R/playground/"', cfg_text)
+        self.assertIn('"/en/playground/": "/R/playground/?lang=en"', cfg_text)
+        self.assertIn('"/ru/playground/": "/R/playground/?lang=ru"', cfg_text)
+
+        pub_pg = self.out / "public" / "playground"
+        self.assertTrue((pub_pg / "index.html").is_file())
+        self.assertTrue((pub_pg / "playground.css").is_file())
+        self.assertTrue((pub_pg / "playground.js").is_file())
+        self.assertTrue((pub_pg / "clang-worker.js").is_file())
+        self.assertTrue((pub_pg / "player.css").is_file())
+        self.assertTrue((pub_pg / "clang-trace-frontend.wasm").is_file())
+
+    def test_playground_missing_file_rejected(self):
+        from publishing.config import ConfigError, load_config
+        (self.root / "visualizations/player/playground.js").unlink()
+        with self.assertRaises(ConfigError):
+            load_config(self.root)
+
+
 if __name__ == "__main__":
     unittest.main()
