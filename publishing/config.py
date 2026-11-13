@@ -22,7 +22,16 @@ from pathlib import Path
 
 from .visualization_config import VisualizationOptions, parse_visualizations
 from .site_assets import SiteAssets, parse_site_assets
-from .options import CiOptions, DeploymentOptions, MaintenanceOptions, NavigationOptions, SmokeOptions, parse_options
+from .options import (
+    CiOptions,
+    DeploymentOptions,
+    MaintenanceOptions,
+    NavigationOptions,
+    PlaygroundOptions,
+    SmokeOptions,
+    parse_options,
+    parse_playground,
+)
 
 CONFIG_FILENAME = "course-publishing.json"
 
@@ -30,7 +39,7 @@ ALLOWED_TOP_FIELDS = frozenset({
     "version", "default_language", "languages", "exclude",
     "route_sections", "site_title", "root_lesson", "peer_repositories",
 })
-OPTIONAL_TOP_FIELDS = frozenset({"ci", "deployment", "smoke", "navigation", "slug_overrides", "backlink_labels", "maintenance", "visualizations", "site_assets"})
+OPTIONAL_TOP_FIELDS = frozenset({"ci", "deployment", "smoke", "navigation", "slug_overrides", "backlink_labels", "maintenance", "visualizations", "site_assets", "playground"})
 ALLOWED_LANGUAGE_FIELDS = frozenset({"code", "root", "label"})
 ALLOWED_ROUTE_FIELDS = frozenset({"source", "destination"})
 
@@ -178,6 +187,7 @@ class PublishingConfig:
 
     visualizations: VisualizationOptions | None = None
     site_assets: SiteAssets = field(default_factory=SiteAssets)
+    playground: PlaygroundOptions | None = None
 
     def roots(self) -> dict[str, str]:
         return {l.code: l.root for l in self.languages}
@@ -443,6 +453,7 @@ def load_config(course_repo: Path | str) -> PublishingConfig:
         ci, deployment, smoke, navigation, slug_overrides, backlink_labels, maintenance = parse_options(raw, repo, codes)
         visualizations = parse_visualizations(raw.get("visualizations"), repo)
         site_assets = parse_site_assets(raw.get("site_assets"), repo)
+        playground = parse_playground(raw.get("playground"), repo, codes)
     except ValueError as exc:
         raise _fail(str(exc), path=cfg_path) from exc
 
@@ -466,4 +477,5 @@ def load_config(course_repo: Path | str) -> PublishingConfig:
         maintenance=maintenance,
         visualizations=visualizations,
         site_assets=site_assets,
+        playground=playground,
     )

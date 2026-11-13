@@ -52,7 +52,9 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .site_assets import copy_site_assets, head_js
+from .options import PLAYGROUND_REQUIRED_FILES
+from .site_assets import copy_site_assets, head_entries, head_js
+from .visualization_config import contained_path
 
 PINNED_VERSIONS = {
     # Proven by the compatibility suite (representative lessons with
@@ -181,6 +183,21 @@ def _sidebar_to_js(sidebar: list, indent: int = 4) -> str:
                 parts.append(f"{p}translations: {trans}")
             inner = ",\n".join(parts)
             return p + "{\n" + inner + f"\n{p[:-2]}" + "}"
+        if "link" in node and "items" not in node:
+            parts = [
+                f"{p}label: {json.dumps(node['label'], ensure_ascii=False)}",
+                f"{p}link: {json.dumps(node['link'], ensure_ascii=False)}",
+            ]
+            if "translations" in node and node["translations"]:
+                trans = json.dumps(node["translations"],
+                                   ensure_ascii=False, sort_keys=True)
+                parts.append(f"{p}translations: {trans}")
+            if "attrs" in node and node["attrs"]:
+                attrs = json.dumps(node["attrs"],
+                                   ensure_ascii=False, sort_keys=True)
+                parts.append(f"{p}attrs: {attrs}")
+            inner = ",\n".join(parts)
+            return p + "{\n" + inner + f"\n{p[:-2]}" + "}"
         # group
         lines = [p + "{"]
         lines.append(
@@ -225,6 +242,16 @@ def generate_astro_config(config, identity, starlight_sidebar,
     redirects_js = ",\n".join(
         f"    {json.dumps(k)}: {json.dumps(base_prefix + v)}"
         for k, v in sorted(redirects.items()))
+    pg = getattr(config, "playground", None)
+    if pg is None:
+        head_rendered = head_js(config.site_assets, base)
+    else:
+        pg_url = base_prefix + "/" + pg.route.strip("/") + "/"
+        entries = [
+            *head_entries(config.site_assets, base),
+            {"tag": "meta", "attrs": {"name": "cv-playground-url", "content": pg_url}},
+        ]
+        head_rendered = json.dumps(entries, ensure_ascii=False)
     lines = [
         "import { defineConfig } from 'astro/config';",
         "import starlight from '@astrojs/starlight';",
@@ -265,7 +292,7 @@ def generate_astro_config(config, identity, starlight_sidebar,
         "      pagefind: true,",
         "      pagination: true,",
         "      customCss: ['./src/styles/custom.css'],",
-        f"      head: {head_js(config.site_assets, base)},",
+        f"      head: {head_rendered},",
         "      // KaTeX CSS via customCss hides the MathML copy (else formulas",
         "      // appear duplicated: MathML + HTML). Fonts bundle from the",
         "      // pinned katex package, no CDN.",
@@ -454,6 +481,18 @@ def write_site_project(out_dir: Path, files: dict[str, str], copy_list,
     public.mkdir(parents=True, exist_ok=True)
     (public / ".nojekyll").write_bytes(b"")
     copy_site_assets(config.site_assets, config.course_repo, public)
+    pg = getattr(config, "playground", None)
+    if pg is not None:
+        pg_src = contained_path(config.course_repo, pg.source)
+        pg_dest = public / Path(*pg.route.strip("/").split("/"))
+        pg_dest.mkdir(parents=True, exist_ok=True)
+        for name in PLAYGROUND_REQUIRED_FILES:
+            dest_name = "index.html" if name == "playground.html" else name
+            (pg_dest / dest_name).write_bytes((pg_src / name).read_bytes())
+        wasm = pg_src / "clang-trace-frontend.wasm"
+        if wasm.is_file():
+            (pg_dest / "clang-trace-frontend.wasm").write_bytes(
+                wasm.read_bytes())
     dist_dir = out_dir / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
     keep = dist_dir / ".gitkeep"
@@ -504,7 +543,7 @@ def run_site_build(course_repo: Path, args) -> int:
     from .metadata import collect_metadata_state, validate_all_metadata
     from .navigation import (build_lab_sequences, build_sidebars,
                              build_starlight_sidebar, get_group_redirects,
-                             get_redirects)
+                             get_playground_redirects, get_redirects)
     from .projection import (_clean_out_dir, collect_projection_data,
                              validate_out_location)
 
@@ -585,6 +624,7 @@ def run_site_build(course_repo: Path, args) -> int:
     # no listing pages emitted). Keys are disjoint from the root and
     # locale roots above by construction.
     redirects.update(get_group_redirects(nav, config))
+    redirects.update(get_playground_redirects(config))
     if check_mode:
         n = sum(1 for k in files if k.startswith("src/content/docs/"))
         print(f"site check: OK ({n} lesson(s); "

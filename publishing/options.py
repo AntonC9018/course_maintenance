@@ -56,6 +56,15 @@ class NavigationOptions:
     source_labels: dict[str, str] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class PlaygroundOptions:
+    source: str = "visualizations/player"
+    route: str = "playground"
+    sidebar_group: str = "cpp"
+    label: str = "Execution Playground"
+    translations: dict[str, str] = field(default_factory=dict)
+
+
 def _object(raw, name, allowed):
     if not isinstance(raw, dict):
         raise ValueError(f"{name} must be an object")
@@ -209,3 +218,46 @@ def parse_options(raw, repo: Path, languages):
         raise ValueError("maintenance.heading_numbering must be 'document' or 'section'")
     maintenance = MaintenanceOptions(numbering)
     return ci, deployment, smoke, navigation, dict(overrides), backlink_labels, maintenance
+
+
+PLAYGROUND_REQUIRED_FILES = (
+    "playground.html",
+    "playground.css",
+    "playground.js",
+    "clang-worker.js",
+    "player.css",
+)
+
+
+def parse_playground(raw: object, repo: Path, languages) -> PlaygroundOptions | None:
+    if raw is None:
+        return None
+    pg = _object(raw, "playground", {
+        "source", "route", "sidebar_group", "label", "translations"})
+    defaults = PlaygroundOptions()
+    source = _relative(pg.get("source", defaults.source), "playground.source")
+    source_dir = (repo / Path(*source.split("/"))).resolve()
+    if not source_dir.is_relative_to(repo.resolve()) or not source_dir.is_dir():
+        raise ValueError(f"playground.source directory not found: {source!r}")
+    for req in PLAYGROUND_REQUIRED_FILES:
+        if not (source_dir / req).is_file():
+            raise ValueError(f"playground.source is missing {req!r}: {source!r}")
+    route = _relative(pg.get("route", defaults.route), "playground.route")
+    if not re.fullmatch(r"[a-z0-9][a-z0-9/-]*", route):
+        raise ValueError("playground.route must be a lowercase route")
+    sidebar_group = _relative(
+        pg.get("sidebar_group", defaults.sidebar_group),
+        "playground.sidebar_group")
+    label = pg.get("label", defaults.label)
+    if not isinstance(label, str) or not label.strip():
+        raise ValueError("playground.label must be a nonempty string")
+    translations = _labels(
+        pg.get("translations", {}), "playground.translations", languages)
+    return PlaygroundOptions(
+        source=source,
+        route=route,
+        sidebar_group=sidebar_group,
+        label=label,
+        translations=translations,
+    )
+

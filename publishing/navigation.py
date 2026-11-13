@@ -255,6 +255,24 @@ def get_group_redirects(nav: list[dict], config) -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
+def get_playground_redirects(config) -> dict[str, str]:
+    """Per-locale redirects from ``/{lang}/{route}/`` to ``/{route}/?lang={lang}``.
+
+    Starlight localizes sidebar internal links (``/playground/`` -> ``/<base>/<lang>/playground/``);
+    when playground-site.js is present it rewrites the link directly to ``/<base>/playground/?lang=<lang>&theme=...``,
+    and these redirects provide a working no-JS fallback.
+    """
+    pg = getattr(config, "playground", None)
+    if pg is None:
+        return {}
+    route = pg.route.strip("/")
+    out: dict[str, str] = {}
+    for lang in config.languages:
+        code = lang.code
+        out[f"/{code}/{route}/"] = f"/{route}/?lang={code}"
+    return dict(sorted(out.items()))
+
+
 def _first_descendant_slug(group_rest: str, rest_to_entry: dict,
                            lang: str, all_groups: set[str], config=None) -> str | None:
     """First lesson slug below a group in sidebar order (SITE-15)."""
@@ -646,6 +664,13 @@ def build_starlight_sidebar(per_locale: dict[str, list],
                     result.append(item)
                 else:
                     result.append({"slug": rest})
+            elif "link" in n:
+                item = {"label": n["label"], "link": n["link"]}
+                if "translations" in n and n["translations"]:
+                    item["translations"] = dict(n["translations"])
+                if "attrs" in n and n["attrs"]:
+                    item["attrs"] = dict(n["attrs"])
+                result.append(item)
             elif "items" in n:
                 want = descendant_rests(n)
                 trans = {}
@@ -706,4 +731,45 @@ def build_starlight_sidebar(per_locale: dict[str, list],
             merged.append(item)
         else:
             merged.append({"slug": rest})
+
+    pg = getattr(config, "playground", None)
+    if pg is not None:
+        group_name = pg.sidebar_group.strip("/")
+        prefix = group_name + "/"
+        group_labels = navigation_options(config).group_labels.get(
+            group_name, {})
+        fallback_labels = {
+            group_labels.get(default),
+            humanize_segment(group_name),
+        } - {None}
+
+        def has_group_descendant(node: dict) -> bool:
+            s = node.get("slug")
+            if s and (s == group_name or s.startswith(prefix)):
+                return True
+            return any(has_group_descendant(c) for c in node.get("items", []))
+
+        def insert_playground(nodes: list) -> bool:
+            for node in nodes:
+                if "items" not in node:
+                    continue
+                if has_group_descendant(node) or node.get("label") in fallback_labels:
+                    pg_item: dict = {
+                        "label": pg.label,
+                        "link": f"/{pg.route.strip('/')}/",
+                        "attrs": {
+                            "class": "cv-rainbow-link cv-rainbow-sidebar",
+                            "data-astro-reload": "",
+                        },
+                    }
+                    if pg.translations:
+                        pg_item["translations"] = dict(pg.translations)
+                    node["items"].insert(0, pg_item)
+                    return True
+                if insert_playground(node["items"]):
+                    return True
+            return False
+
+        insert_playground(merged)
+
     return merged
