@@ -7,7 +7,8 @@ A tag is two HTML comments inside an answer-style ``<details>`` block::
     <!-- </visualization> -->
 
 ``template="name"`` on the opening marker overrides the tracer's own choice.
-``types`` asks the tracer to show types: for an example that is about them.
+Bare attributes after it (``<visualization types>``) are flags the course's tracer defines;
+maintenance passes each through as ``--name`` and the tracer rejects one it does not know.
 The source is the nearest preceding top-level code fence, which must be C++.
 """
 from __future__ import annotations
@@ -20,7 +21,8 @@ CPP_LANGUAGES = frozenset({'cpp', 'c++', 'cxx'})
 _OPEN_FENCE = re.compile(r'^ {0,3}(`{3,}|~{3,})([^\n]*)$')
 _DETAILS = re.compile(r'</?details\b[^>]*>|</?visualization\b[^>]*>', re.IGNORECASE)
 _MENTIONS_TAG = re.compile(r'<\s*/?\s*visualization\b', re.IGNORECASE)
-_OPENING = re.compile(r'<visualization(?:\s+template="(?P<template>[a-z][a-z0-9-]*)")?(?P<types>\s+types)?\s*>')
+_OPENING = re.compile(r'<visualization(?:\s+template="(?P<template>[a-z][a-z0-9-]*)")?'
+                      r'(?P<flags>(?:\s+[a-z][a-z0-9-]*)*)\s*>')
 _CLOSING = re.compile(r'</visualization\s*>', re.IGNORECASE)
 _BLOCK_BOUNDARY = re.compile(r'</?details\b|^ {0,3}(?:`{3,}|~{3,})',
                              re.IGNORECASE | re.MULTILINE)
@@ -51,8 +53,8 @@ class Tag:
     source: Fence
     body_start: int
     body_end: int
-    # Whether the example is about types, so the trace shows them.
-    types: bool = False
+    # The tracer's flags the tag names, sorted, such as ('types',).
+    flags: tuple[str, ...] = ()
 
 
 @dataclass
@@ -67,8 +69,14 @@ def _tag_problem(content: str, depth: int, source: Fence | None) -> str | None:
         return 'closing visualization marker has no matching opening marker'
     if '<!--' in content:
         return 'nested or unclosed visualization comment'
-    if not _OPENING.fullmatch(content):
-        return 'expected <visualization>, optionally with template="name" and then types'
+    opening = _OPENING.fullmatch(content)
+    if not opening:
+        return 'expected <visualization>, optionally with template="name" and then bare flags'
+    flags = opening['flags'].split()
+    if 'template' in flags:
+        return 'template needs a value: template="name"'
+    if len(set(flags)) != len(flags):
+        return 'a flag is repeated'
     if depth == 0:
         return 'visualization must be inside a details block'
     if source is None:
@@ -171,7 +179,7 @@ def scan_document(text: str, path: str | Path = '<markdown>') -> ScanResult:
                         result.tags.append(Tag(
                             comment, closing[1], text.count('\n', 0, comment) + 1,
                             opening['template'], last_source,
-                            finish, closing[0], bool(opening['types'])))
+                            finish, closing[0], tuple(sorted(opening['flags'].split()))))
                         finish = closing[1]
                 cursor = finish
                 if finish > line_end:

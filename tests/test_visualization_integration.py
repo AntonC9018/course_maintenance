@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+import hashlib
 import json
 import tempfile
 import unittest
@@ -39,14 +40,15 @@ class ScanTest(unittest.TestCase):
                 self.assertEqual(text[tag.body_start:tag.body_end].strip(),
                                  'link' if template else '')
 
-    def test_types_attribute_alone_and_after_a_template(self):
-        for opening, expected in [('<visualization>', (None, False)), ('<visualization types>', (None, True)),
-                                  ('<visualization template="memory" types>', ('memory', True)),
-                                  ('<visualization\n  types >', (None, True))]:
+    def test_flags_alone_and_after_a_template(self):
+        for opening, expected in [('<visualization>', (None, ())), ('<visualization types>', (None, ('types',))),
+                                  ('<visualization template="memory" types>', ('memory', ('types',))),
+                                  ('<visualization\n  types >', (None, ('types',))),
+                                  ('<visualization types colours>', (None, ('colours', 'types')))]:
             with self.subTest(opening=opening):
                 result = scan_document(document(marker=f'<!-- {opening} -->\n<!-- </visualization> -->'))
                 self.assertEqual(result.errors, [])
-                self.assertEqual((result.tags[0].template, result.tags[0].types), expected)
+                self.assertEqual((result.tags[0].template, result.tags[0].flags), expected)
 
     def test_answer_code_and_fake_html_in_code_do_not_replace_source(self):
         text = ('```cpp\nint a{5}; // <details>\n```\n<details>\n'
@@ -101,6 +103,8 @@ class ScanTest(unittest.TestCase):
             ('<!-- <visualization /> -->' + close, 'expected'),
             ('<!-- <visualization types template="a"> -->' + close, 'expected'),
             ('<!-- <visualization types="yes"> -->' + close, 'expected'),
+            ('<!-- <visualization template> -->' + close, 'template needs a value'),
+            ('<!-- <visualization types types> -->' + close, 'repeated'),
             ('<!-- <visualization> -->', 'closing'),
             ('<!-- </visualization> -->', 'no matching opening'),
             ('<!-- <visualization> -->\n' + TAG, 'closing'),
@@ -203,8 +207,13 @@ class GenerationTest(unittest.TestCase):
         self.assertNotEqual(base, trace_key(SOURCE + ' ', None, 'r1'))
         self.assertNotEqual(base, trace_key(SOURCE, 'memory', 'r1'))
         self.assertNotEqual(base, trace_key(SOURCE, None, 'r2'))
-        self.assertNotEqual(base, trace_key(SOURCE, None, 'r1', types=True))
-        self.assertEqual(base, trace_key(SOURCE, None, 'r1', types=False))
+        self.assertNotEqual(base, trace_key(SOURCE, None, 'r1', ('types',)))
+        self.assertEqual(base, trace_key(SOURCE, None, 'r1', ()))
+        self.assertEqual(trace_key(SOURCE, None, 'r1', ('a', 'b')), trace_key(SOURCE, None, 'r1', ('b', 'a')))
+
+    def test_flags_keep_the_keys_they_had_as_the_types_attribute(self):
+        old = json.dumps(['r1', None, SOURCE, 'types'], ensure_ascii=False)
+        self.assertEqual(trace_key(SOURCE, None, 'r1', ('types',)), hashlib.sha256(old.encode()).hexdigest())
 
     def test_template_override_reaches_the_tracer(self):
         marker = '<!-- <visualization template="memory"> -->\n<!-- </visualization> -->'
@@ -213,13 +222,13 @@ class GenerationTest(unittest.TestCase):
         self.assertIn(['--template', 'memory'], [c[-2:] for c in self.traced()])
         self.assertEqual(len(self.stored()), 2)
 
-    def test_types_reach_the_tracer_and_get_their_own_trace(self):
-        marker = '<!-- <visualization types> -->\n<!-- </visualization> -->'
+    def test_flags_reach_the_tracer_and_get_their_own_trace(self):
+        marker = '<!-- <visualization types colours> -->\n<!-- </visualization> -->'
         (self.root / 'en' / 'lab.md').write_text(document(marker=marker))
         self.assertEqual(generate(self.root, self.config, command=self.command), [])
-        self.assertEqual(sorted(c[-1] == '--types' for c in self.traced()), [False, True])
-        self.assertEqual(self.stored(), sorted(trace_key(SOURCE, None, self.revision, types) + '.json'
-                                               for types in (False, True)))
+        self.assertIn(['--colours', '--types'], [c[-2:] for c in self.traced()])
+        self.assertEqual(self.stored(), sorted(trace_key(SOURCE, None, self.revision, flags) + '.json'
+                                               for flags in ((), ('colours', 'types'))))
 
     def test_full_run_prunes_unused_traces_but_a_selected_run_does_not(self):
         self.traces.mkdir(parents=True)
