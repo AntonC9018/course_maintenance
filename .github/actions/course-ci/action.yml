@@ -39,12 +39,11 @@ runs:
       run: npx --prefix "$GITHUB_ACTION_PATH/../../../renderer" playwright install chromium
     # Tracing needs the course's own pinned toolchain (its flake dev shell),
     # so these steps run only for courses that configure visualizations.
+    # The toolchain substitutes straight from cache.nixos.org: a GitHub Actions
+    # Nix store cache uploads each path serially and ran for over ten minutes.
     - name: Install Nix for the visualization toolchain
       if: steps.pins.outputs.visualizations == 'true'
       uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
-    - name: Cache Nix store paths
-      if: steps.pins.outputs.visualizations == 'true'
-      uses: DeterminateSystems/magic-nix-cache-action@84c0677f58dcedf3b91f8223ce36a9ea5b3c84b7 # v15
     # Traces are content addressed, so a partial restore from an older set
     # only leaves the changed examples to trace; unused ones are pruned.
     - name: Restore visualization traces

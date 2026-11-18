@@ -7,9 +7,11 @@ changed examples are traced again.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -150,28 +152,34 @@ class Traces:
                 for example in self.examples if not self.path(example).is_file()]
 
     def generate(self, *, prune: bool) -> list[str]:
-        """Trace every example without a stored trace; drop traces nothing uses."""
-        errors = []
+        """Trace every example without a stored trace; drop traces nothing uses.
+
+        Each trace is an independent tracer process, so they run in parallel.
+        """
         wanted = {}
         for example in self.examples:
             wanted.setdefault(self.path(example), example)
         self.directory.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix='course-visualizations-') as scratch:
-            source = Path(scratch) / 'snippet.cpp'
-            for target, example in wanted.items():
-                if target.is_file():
-                    continue
-                print(f'visualizations: tracing {example.path.relative_to(self.repo)}:'
-                      f'{example.tag.line}', flush=True)
-                source.write_text(example.tag.source.source + '\n', encoding='utf-8')
-                try:
-                    self._store(target, self.tracer.trace(source, example.tag.template, example.tag.flags))
-                except VisualizationError as exc:
-                    errors.append(f'{example.location(self.repo)} cannot trace: {exc}')
+        pending = [(target, example) for target, example in wanted.items() if not target.is_file()]
+        with tempfile.TemporaryDirectory(prefix='course-visualizations-') as scratch, \
+                ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
+            jobs = [pool.submit(self._generate_one, Path(scratch) / f'{index}.cpp', target, example)
+                    for index, (target, example) in enumerate(pending)]
+            errors = [error for job in jobs if (error := job.result())]
         if prune:
             for stale in set(self.directory.glob('*.json')) - set(wanted):
                 stale.unlink()
         return errors
+
+    def _generate_one(self, source: Path, target: Path, example: TaggedExample) -> str | None:
+        print(f'visualizations: tracing {example.path.relative_to(self.repo)}:'
+              f'{example.tag.line}', flush=True)
+        source.write_text(example.tag.source.source + '\n', encoding='utf-8')
+        try:
+            self._store(target, self.tracer.trace(source, example.tag.template, example.tag.flags))
+        except VisualizationError as exc:
+            return f'{example.location(self.repo)} cannot trace: {exc}'
+        return None
 
     def _store(self, target: Path, content: str):
         with tempfile.NamedTemporaryFile('w', encoding='utf-8', dir=target.parent,
