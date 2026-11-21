@@ -39,6 +39,8 @@ from maintenance.links import github_slug
 from maintenance.patterns import EXTERNAL_PREFIXES, FENCE_RE
 from maintenance.patterns import HEADING_RE, LINK_RE
 
+from .navigation import get_base
+
 _FIX_LINK = ("fix: correct the link in the source file; "
              "operation: publishing check")
 _IMG_RE = re.compile(
@@ -89,6 +91,12 @@ class LinkIndex:
     def to_deterministic_dict(self) -> dict[str, str]:
         return {k: self.lessons[k].canonical_url
                 for k in sorted(self.lessons)}
+
+    def site_identity(self):
+        """Identity of the course being built, which owns the site."""
+        owned = self.repo_for_path(self.course_repo.resolve())
+        assert owned is not None, "course repository missing from index"
+        return owned[1]
 
     def repo_for_path(self, abs_path: Path):
         resolved = abs_path.resolve() if not abs_path.is_absolute() \
@@ -353,13 +361,15 @@ def resolve_link(source_abs: Path | str, raw_dest: str, *,
             f"assets/{repo_ident.owner}/{repo_ident.repo}"
         quoted_asset = "/".join(
             urllib.parse.quote(p, safe="") for p in copy_rel_raw.split("/"))
-        # Astro serves public/ below the Pages project base (SITE-2), so
-        # image URLs are absolute with the owning repo's base prefix
-        # (e.g. /R/assets/O/R/en/assets/pic.png). Relative assets/... would
-        # resolve against the lesson's nested slug and fail the renderer
-        # build (ImageNotFound). Copy destination is public/<copy_rel>
-        # (see projection/site writers); URL is base + copy_rel.
-        base = f"/{repo_ident.repo}/"
+        # Astro serves public/ below the site's base (SITE-2), so image
+        # URLs are absolute with that base (e.g. /R/assets/O/R/en/pic.png,
+        # or /assets/O/R/en/pic.png on a custom domain). Relative
+        # assets/... would resolve against the lesson's nested slug and
+        # fail the renderer build (ImageNotFound). Every image, including
+        # a peer repository's, is copied into the course being built, so
+        # the base is the course's, not the owning repository's. Copy
+        # destination is public/<copy_rel> (see projection/site writers).
+        base = get_base(index.site_identity())
         return ResolvedLink(kind="image", url=base + quoted_asset + suffix,
                             copy_source=resolved,
                             copy_rel=copy_rel_raw)

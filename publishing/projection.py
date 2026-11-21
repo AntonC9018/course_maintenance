@@ -66,6 +66,7 @@ from pathlib import Path
 from maintenance.patterns import FENCE_RE, ORDERED_PATTERN
 
 from .metadata import BACKLINK_END, BACKLINK_START, split_frontmatter
+from .navigation import get_base
 
 _FIX_PROJECTION = "operation: projection build"
 _ATX_RE = re.compile(r'^(\s{0,3})(#{1,6})(?:\s+(.*))?$')
@@ -818,7 +819,7 @@ def _astro_config_text(config, identity) -> str:
         '// Full Astro Starlight config (SITE-1..SITE-14) lands in #11.',
         f'// Site titles: {titles}',
         f'// Pages: {identity.pages_url}',
-        f'// Base: /{identity.repo}/',
+        f'// Base: {get_base(identity)}',
         '// No timestamps emitted (PROJ-6).',
         'export default {};',
         '',
@@ -850,7 +851,7 @@ def write_projection(out_dir: Path, files: dict[str, str],
         dest.write_text(files[rel], encoding='utf-8')
     for src_abs, copy_rel in sorted(copy_list, key=lambda t: t[1]):
         # Images are served from public/ below the Pages base (SITE-2);
-        # markdown references /<repo>/assets/... (see links.resolve_link).
+        # markdown references <base>assets/... (see links.resolve_link).
         # Copy to public/<copy_rel> so Astro copies public/ -> dist/.
         dest = out_dir / "public" / Path(*copy_rel.split('/'))
         dest.parent.mkdir(parents=True, exist_ok=True)
