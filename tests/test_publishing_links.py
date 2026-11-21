@@ -226,6 +226,20 @@ class TestResolveTargets(unittest.TestCase):
         self.assertFalse(out.copy_rel.startswith("public/"))
         self.assertFalse(out.copy_rel.startswith("/"))
 
+    def test_image_url_uses_custom_domain_base(self):
+        # A custom domain serves the site at its root: no /<repo>/ prefix.
+        from dataclasses import replace
+        from publishing.identity import infer_identity
+        from publishing.links import build_link_index, resolve_link
+        config = replace(self.config, deployment=replace(
+            self.config.deployment, pages_url="https://course.example"))
+        identity = infer_identity(self.root, config)
+        index = build_link_index(self.root, config, identity,
+                                 self.inventory, self.final)
+        out = resolve_link((self.root / "en/guide/01_intro.md").resolve(),
+                           "../assets/pic.png", is_image=True, index=index)
+        self.assertTrue(out.url.startswith("/assets/O/R/"), out.url)
+
     def test_link_syntax_to_same_image_is_github_not_copy(self):
         out = self._resolve("en/guide/01_intro.md",
                             "../assets/pic.png", is_image=False)
